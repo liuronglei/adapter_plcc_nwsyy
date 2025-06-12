@@ -1,0 +1,164 @@
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Number, Value};
+use derive_more::with_trait::{Display, FromStr};
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct MyTransports {
+    pub transports: Vec<MyTransport>,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct MyTransport {
+    pub id: u64,
+    /// 通道名称
+    pub name: String,
+    /// 服务端的ip和por
+    pub mqtt_broker: (String, u16),
+    /// 通过mqtt读写的测点
+    pub point_ids: Vec<(u64, bool)>,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct MyPoints {
+    pub points: Vec<MyMeasurement>,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct MyMeasurement {
+    /// 唯一的id
+    pub point_id: String,
+    /// 测点名
+    pub point_name: String,
+    /// 别名
+    pub alias_id: String,
+    /// 是否是离散量
+    pub is_discrete: bool,
+    /// 是否是计算点
+    pub is_computing_point: bool,
+    /// 如果是计算点，这是表达式
+    pub expression: String,
+    /// 变换公式
+    pub trans_expr: String,
+    /// 逆变换公式
+    pub inv_trans_expr: String,
+    /// 判断是否"变化"的公式，用于变化上传或储存
+    pub change_expr: String,
+    /// 判断是否为0值的公式
+    pub zero_expr: String,
+    /// 单位
+    pub data_unit: String,
+    /// 上限，用于坏数据辨识
+    pub upper_limit: f64,
+    /// 下限，用于坏数据辨识
+    pub lower_limit: f64,
+    /// 告警级别1的表达式
+    pub alarm_level1_expr: String,
+    /// 告警级别2的表达式
+    pub alarm_level2_expr: String,
+    /// 如是，则不判断是否"变化"，均上传
+    pub is_realtime: bool,
+    /// 是否是soe点
+    pub is_soe: bool,
+    /// 默认值存储在8个字节，需要根据is_discrete来转换成具体的值
+    pub init_value: u64,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct MyAoes {
+    pub aoes: Vec<MyAoe>,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct MyAoe {
+    /// aoe id
+    pub id: u64,
+    /// aoe name
+    pub name: String,
+    /// 节点
+    pub events: Vec<crate::model::south::EventNode>,
+    /// 边
+    pub actions: Vec<MyActionEdge>,
+    /// aoe启动的方式
+    pub trigger_type: MyTriggerType,
+    /// 用户自定义的变量，这些变量不在计算点的范围
+    pub variables: Vec<(String, String)>,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct MyActionEdge {
+    pub aoe_id: u64,
+    pub name: String,
+    pub source_node: u64,
+    pub target_node: u64,
+    /// action失败时的处理方式
+    pub failure_mode: crate::model::south::FailureMode,
+    pub action: MyEigAction,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub enum MyEigAction {
+    /// 无动作
+    None,
+    /// 设点动作
+    SetPoints(MySetPoints),
+    /// 设点动作
+    SetPointsWithCheck(MySetPoints),
+    /// 设点动作
+    SetPoints2(MySetPoints),
+    /// 设点动作
+    SetPointsWithCheck2(MySetPoints),
+    /// 求方程
+    Solve(MySolver),
+    /// Nlsolve
+    Nlsolve(MySolver),
+    /// 混合整数线性规划稀疏表示
+    Milp(MyProgramming),
+    /// 混合整数线性规划稠密表示
+    SimpleMilp(MyProgramming),
+    /// 非整数线性规划
+    Nlp(MyProgramming),
+    /// 调用webservice获取EigAction并执行
+    Url(String),
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct MyProgramming {
+    // Ax = b
+    pub f: String,
+    pub x: String,
+    pub constraint: String,
+    // 求解器参数：参数名、参数值
+    pub parameters: HashMap<String, String>,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct MySolver {
+    // Ax = b
+    pub f: String,
+    pub x: String,
+    // 求解器参数：参数名、参数值
+    pub parameters: HashMap<String, String>,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct MySetPoints {
+    pub discretes: HashMap<String, String>,
+    pub analogs: HashMap<String, String>,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub enum MyTriggerType {
+    // 简单固定周期触发
+    SimpleRepeat(String),
+    // cron expression
+    TimeDrive(String),
+    // 事件驱动，AOE开始节点条件满足即触发
+    EventDrive(String),
+    // 事件驱动 && Simple drive
+    EventRepeatMix(String),
+    // 事件驱动 && Time drive
+    EventTimeMix(String),
+}
