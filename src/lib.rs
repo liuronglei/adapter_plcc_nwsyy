@@ -6,12 +6,12 @@ pub mod utils;
 pub mod mqttclient;
 
 pub const APP_NAME: &str = "ext.syy.plcc";
-pub const JSON_DATA_PATH: &str = "/data/ext.syy.plcc";
+pub const JSON_DATA_PATH: &str = "/data/ext.syy.plcc/cloudconf";
 // pub const JSON_DATA_PATH: &str = "C:/test_file";
 pub const FILE_NAME_POINTS: &str = "points.json";
 pub const FILE_NAME_TRANSPORTS: &str = "ransports.json";
 pub const FILE_NAME_AOES: &str = "aoes.json";
-pub const DB_PATH_PARSER: &str = "/data/ext.syy.plcc";
+pub const DB_PATH_PARSER: &str = "/data/ext.syy.plcc/cloudconf";
 pub const PLCC_HOST: &str = "http://192.168.1.99:58899";
 pub const PLCC_USR: &str = "admin";
 pub const PLCC_PWD: &str = "easy2021";
