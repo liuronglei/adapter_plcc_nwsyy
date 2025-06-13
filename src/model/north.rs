@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value};
@@ -11,14 +10,23 @@ pub struct MyTransports {
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
-pub struct MyTransport {
-    pub id: u64,
+pub struct MyMqttTransport {
+    pub dev_id: String,
     /// 通道名称
     pub name: String,
-    /// 服务端的ip和por
+    /// 服务端的ip和port
     pub mqtt_broker: (String, u16),
-    /// 通过mqtt读写的测点
-    pub point_ids: Vec<(u64, bool)>,
+    /// 遥测/遥信的测点
+    pub point_ycyx_ids: Vec<String>,
+    /// 遥调的测点
+    pub point_yt_ids: Vec<String>,
+    /// 遥控的测点
+    pub point_yk_ids: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub enum MyTransport {
+    Mqtt(MyMqttTransport),
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
@@ -161,4 +169,37 @@ pub enum MyTriggerType {
     EventRepeatMix(String),
     // 事件驱动 && Time drive
     EventTimeMix(String),
+}
+
+impl MyTransport {
+    pub fn dev_id(&self) -> String {
+        match self {
+            MyTransport::Mqtt(t) => t.dev_id.clone(),
+        }
+    }
+    pub fn name(&self) -> String {
+        match self {
+            MyTransport::Mqtt(t) => t.name.clone(),
+        }
+    }
+    pub fn mqtt_broker(&self) -> (String, u16) {
+        match self {
+            MyTransport::Mqtt(t) => t.mqtt_broker.clone(),
+        }
+    }
+    pub fn point_ycyx_ids(&self) -> Vec<String> {
+        match self {
+            MyTransport::Mqtt(t) => t.point_ycyx_ids.clone(),
+        }
+    }
+    pub fn point_yt_ids(&self) -> Vec<String> {
+        match self {
+            MyTransport::Mqtt(t) => t.point_yt_ids.clone(),
+        }
+    }
+    pub fn point_yk_ids(&self) -> Vec<String> {
+        match self {
+            MyTransport::Mqtt(t) => t.point_yk_ids.clone(),
+        }
+    }
 }

@@ -7,9 +7,11 @@ use std::fs::File;
 use std::io::BufReader;
 
 use crate::db::mydb;
+use crate::{JSON_DATA_PATH, FILE_NAME_POINTS, FILE_NAME_TRANSPORTS, FILE_NAME_AOES};
 use crate::model::north::{MyAoes, MyPoints};
 use crate::model::south::{Measurement};
-use crate::model::ParserResult;
+use crate::model::{ParserResult, points_to_south};
+use crate::utils::plccapi::update_data;
 
 const PARSER_TREE: &str = "parser";
 pub const OPERATION_RECEIVE_BUFF_NUM: usize = 100;
@@ -46,18 +48,22 @@ impl ParserManager {
     async fn do_operation(&self, op: ParserOperation) {
         match op {
             ParserOperation::UpdateJson(sender) => {
-                // let path = "/data/ext.syy.plcc";
-                let path = "C:/project/other/test_file";
-                let file_name_aoes = format!("{path}/aoes.json");
-                let file_name_points = format!("{path}/points.json");
-                let file_name_transports = format!("{path}/transports.json");
-                let (result, value) = self.update_points(file_name_points);
+                let file_name_aoes = format!("{JSON_DATA_PATH}/{FILE_NAME_AOES}");
+                let file_name_points = format!("{JSON_DATA_PATH}/{FILE_NAME_POINTS}");
+                let file_name_transports = format!("{JSON_DATA_PATH}/{FILE_NAME_TRANSPORTS}");
+                let points_result = match self.update_points(file_name_points).await {
+                    Ok(()) => ParserResult {
+                        result: true,
+                        err: "".to_string()
+                    },
+                    Err(err) => ParserResult {
+                        result: false,
+                        err
+                    }
+                };
                 // self.update_aoes(file_name_aoes);
                 
-                if let Err(e) = sender.send(ParserResult {
-                    result,
-                    value
-                }).await {
+                if let Err(e) = sender.send(points_result).await {
                     warn!("!!Failed to send update json : {e:?}");
                 }
             }
@@ -65,17 +71,39 @@ impl ParserManager {
         }
     }
 
-    fn update_points(&self, path: String) -> (bool, String) {
+    async fn update_points(&self, path: String) -> Result<(), String> {
         // 打开文件
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
             // 反序列化为对象
-            let points: MyPoints = serde_json::from_reader(reader)
-                .expect("Failed to parse JSON file");
-            log::debug!("{:?}", points);
-            (true, format!("{:?}", points))
+            if let Ok(points) = serde_json::from_reader(reader) {
+                let (new_points, points_mapping) = points_to_south(points);
+                let _ = update_data(new_points).await?;
+                self.save_point_mapping(points_mapping);
+                Ok(())
+            } else {
+                Err("测点JSON解析失败".to_string())
+            }
         } else {
-            (false, "文件不存在".to_string())
+            Err("测点JSON文件不存在".to_string())
+        }
+    }
+
+    async fn update_transports(&self, path: String) -> Result<(), String> {
+        // 打开文件
+        if let Ok(file) = File::open(path) {
+            let reader = BufReader::new(file);
+            // 反序列化为对象
+            if let Ok(points) = serde_json::from_reader(reader) {
+                let (new_points, points_mapping) = points_to_south(points);
+                let _ = update_data(new_points).await?;
+                self.save_point_mapping(points_mapping);
+                Ok(())
+            } else {
+                Err("测点JSON解析失败".to_string())
+            }
+        } else {
+            Err("测点JSON文件不存在".to_string())
         }
     }
 
@@ -92,9 +120,8 @@ impl ParserManager {
         }
     }
 
-    // 后端保存测点
-    fn save_points(points: Vec<Measurement>) {
-        let url = "http://localhost:8888/api/v1/points/models";
+    fn save_point_mapping(&self, points_mapping: Vec<(u64, String)>) {
+
     }
 
 }

@@ -730,3 +730,22 @@ pub enum FuncEvalError {
     CalculationError(String),
     UnknownFunction,
 }
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub enum Transport {
+    Mqtt(MqttTransport),
+}
+
+impl Transport {
+    pub fn id(&self) -> u64 {
+        match self {
+            Transport::Mqtt(t) => t.id,
+        }
+    }
+
+    pub fn name(&self) -> String {
+        match self {
+            Transport::Mqtt(t) => t.name.clone(),
+        }
+    }
+}

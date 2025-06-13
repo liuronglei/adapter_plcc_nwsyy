@@ -8,11 +8,12 @@ use actix_web::Error;
 use actix_web::middleware::Compress;
 use actix_web::web::Data;
 use tokio::task::JoinHandle;
+use crate::DB_PATH_PARSER;
 use crate::parser::{start_parser_service, config_parser_web_service};
 
 pub async fn run_adapter() -> std::io::Result<()> {
     let http_server_port = 8088;
-    let parser_sender = start_parser_service("./parser".to_string());
+    let parser_sender = start_parser_service(DB_PATH_PARSER.to_string());
     let cloned_parser_sender = Data::new(parser_sender.clone());
     let actix_web_job = std::thread::spawn(move || {
         // 启动web服务，提供resutful服务
