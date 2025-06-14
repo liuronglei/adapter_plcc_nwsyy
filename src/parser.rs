@@ -10,8 +10,8 @@ use crate::db::mydb;
 use crate::{JSON_DATA_PATH, FILE_NAME_POINTS, FILE_NAME_TRANSPORTS, FILE_NAME_AOES};
 use crate::model::north::{MyAoes, MyPoints};
 use crate::model::south::{Measurement};
-use crate::model::{ParserResult, points_to_south, transports_to_south};
-use crate::utils::plccapi::{update_points, update_transports};
+use crate::model::{ParserResult, points_to_south, transports_to_south, aoes_to_south};
+use crate::utils::plccapi::{update_points, update_transports, update_aoes};
 use crate::db::dbutils::*;
 
 const PARSER_TREE: &str = "parser";
@@ -58,14 +58,22 @@ impl ParserManager {
                     result: true,
                     err: "".to_string()
                 };
-                match self.update_points(file_name_points).await {
+                let mut current_id = 65535_u64;
+                match self.parse_points(file_name_points).await {
                     Ok(mapping) => points_mapping = mapping.into_iter().collect(),
                     Err(err) => {
                         result.result = false;
                         result.err = err;
                     }
                 }
-                match self.update_transports(file_name_transports, points_mapping).await {
+                match self.parse_transports(file_name_transports, points_mapping.clone()).await {
+                    Ok(id) => current_id = id,
+                    Err(err) => {
+                        result.result = false;
+                        result.err = err;
+                    }
+                }
+                match self.parse_aoes(file_name_aoes, points_mapping, current_id).await {
                     Ok(()) => {},
                     Err(err) => {
                         result.result = false;
@@ -83,51 +91,55 @@ impl ParserManager {
         }
     }
 
-    async fn update_points(&self, path: String) -> Result<Vec<(String, u64)>, String> {
+    async fn parse_points(&self, path: String) -> Result<Vec<(String, u64)>, String> {
         // 打开文件
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
             // 反序列化为对象
             if let Ok(points) = serde_json::from_reader(reader) {
-                let (new_points, points_mapping) = points_to_south(points);
+                let (new_points, points_mapping) = points_to_south(points).await?;
                 let _ = update_points(new_points).await?;
                 self.save_point_mapping(points_mapping.clone());
                 Ok(points_mapping)
             } else {
-                Err("测点JSON解析失败".to_string())
+                Err("测点JSON反序列化失败".to_string())
             }
         } else {
             Err("测点JSON文件不存在".to_string())
         }
     }
 
-    async fn update_transports(&self, path: String, points_mapping: HashMap<String, u64>) -> Result<(), String> {
+    async fn parse_transports(&self, path: String, points_mapping: HashMap<String, u64>) -> Result<u64, String> {
         // 打开文件
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
             // 反序列化为对象
             if let Ok(transports) = serde_json::from_reader(reader) {
-                let new_transports= transports_to_south(transports, points_mapping);
+                let (new_transports, current_id) = transports_to_south(transports, points_mapping).await?;
                 let _ = update_transports(new_transports).await?;
-                Ok(())
+                Ok(current_id)
             } else {
-                Err("通道JSON解析失败".to_string())
+                Err("通道JSON反序列化失败".to_string())
             }
         } else {
             Err("通道JSON文件不存在".to_string())
         }
     }
 
-    fn update_aoes(&self, path: String) -> bool {
+    async fn parse_aoes(&self, path: String, points_mapping: HashMap<String, u64>, current_id: u64) -> Result<(), String> {
         // 打开文件
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
             // 反序列化为对象
-            let aoes: MyAoes = serde_json::from_reader(reader)
-                .expect("Failed to parse JSON file");
-            true
+            if let Ok(aoes) = serde_json::from_reader(reader) {
+                let new_aoes= aoes_to_south(aoes, points_mapping, current_id).await?;
+                let _ = update_aoes(new_aoes).await?;
+                Ok(())
+            } else {
+                Err("策略JSON反序列化失败".to_string())
+            }
         } else {
-            false
+            Err("策略JSON文件不存在".to_string())
         }
     }
 

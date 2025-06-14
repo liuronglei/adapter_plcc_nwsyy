@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use base64::{Engine, engine::general_purpose::STANDARD as b64_standard};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-use crate::model::south::{Measurement, Transport};
+use crate::model::south::{AoeModel, Measurement, Transport};
 use crate::{PLCC_HOST, PLCC_USR, PLCC_PWD, URL_LOGIN, URL_POINTS, URL_TRANSPORTS, URL_AOES};
 
 const PASSWORD_V_KEY: &[u8] = b"zju-plcc";
@@ -31,6 +31,16 @@ pub async fn update_transports(transports: Vec<Transport>) -> Result<(), String>
         delete_transports(token.clone(), tids).await?;
     }
     save_transports(token, transports).await
+}
+
+pub async fn update_aoes(aoes: Vec<AoeModel>) -> Result<(), String> {
+    let token = login().await?;
+    let old_aoes = query_aoes(token.clone()).await?;
+    let aids = old_aoes.iter().map(|v| v.id).collect::<Vec<u64>>();
+    if !aids.is_empty() {
+        delete_aoes(token.clone(), aids).await?;
+    }
+    save_aoes(token, aoes).await
 }
 
 async fn delete_points(token: String, ids: Vec<u64>) -> Result<(), String> {
@@ -128,6 +138,57 @@ async fn save_transports(token: String, transports: Vec<Transport>) -> Result<()
         Ok(())
     } else {
         Err("调用通道API新增通道失败".to_string())
+    }
+}
+
+async fn delete_aoes(token: String, ids: Vec<u64>) -> Result<(), String> {
+    let ids = ids.iter()
+        .map(|n| n.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let url = format!("{PLCC_HOST}/{URL_AOES}/{ids}");
+    let headers = get_header(token);
+    let client = Client::new();
+    let response = client
+        .delete(&url)
+        .headers(headers)
+        .json(&ids)
+        .send().await.unwrap();
+    if response.status() == StatusCode::OK {
+        Ok(())
+    } else {
+        Err("调用策略API删除策略失败".to_string())
+    }
+}
+
+async fn query_aoes(token: String) -> Result<Vec<AoeModel>, String> {
+    let url = format!("{PLCC_HOST}/{URL_AOES}");
+    let headers = get_header(token);
+    let client = Client::new();
+    let response = client
+        .get(&url)
+        .headers(headers)
+        .send().await.unwrap();
+    if let Ok(aoes) = response.json::<Vec<AoeModel>>().await {
+        Ok(aoes)
+    } else {
+        Err("调用策略API获取策略失败".to_string())
+    }
+}
+
+async fn save_aoes(token: String, aoes: Vec<AoeModel>) -> Result<(), String> {
+    let url = format!("{PLCC_HOST}/{URL_AOES}");
+    let headers = get_header(token);
+    let client = Client::new();
+    let response = client
+        .post(&url)
+        .headers(headers)
+        .json(&aoes)
+        .send().await.unwrap();
+    if response.status() == StatusCode::OK {
+        Ok(())
+    } else {
+        Err("调用策略API新增策略失败".to_string())
     }
 }
 

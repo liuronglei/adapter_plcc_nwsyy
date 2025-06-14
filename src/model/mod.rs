@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use north::MyPoints;
 use south::Measurement;
 use south::{DataUnit, Expr};
 
-use crate::model::north::MyTransports;
-use crate::model::south::{MqttTransport, Transport};
+use crate::model::north::{MyAoes, MyTransports, MyTriggerType};
+use crate::model::south::{AoeModel, MqttTransport, Transport, TriggerType};
 use crate::utils::get_north_tag;
 use crate::APP_NAME;
 
@@ -21,7 +22,7 @@ pub struct ParserResult {
     pub err: String,
 }
 
-pub fn points_to_south(points: MyPoints) -> (Vec<Measurement>, Vec<(String, u64)>) {
+pub async fn points_to_south(points: MyPoints) -> Result<(Vec<Measurement>, Vec<(String, u64)>), String> {
     let mut points_result = vec![];
     let mut mapping_result = vec![];
     let mut current_pid = 100000_u64;
@@ -57,10 +58,10 @@ pub fn points_to_south(points: MyPoints) -> (Vec<Measurement>, Vec<(String, u64)
         });
         mapping_result.push((p.point_id, current_pid));
     }
-    (points_result, mapping_result)
+    Ok((points_result, mapping_result))
 }
 
-pub fn transports_to_south(transports: MyTransports, points_mapping: HashMap<String, u64>) -> Vec<Transport> {
+pub async fn transports_to_south(transports: MyTransports, points_mapping: HashMap<String, u64>) -> Result<(Vec<Transport>, u64), String> {
     let mut transports_result = vec![];
     let mut current_tid = 65536_u64;
     for t in transports.transports {
@@ -209,7 +210,52 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: HashMap<Str
         transports_result.push(Transport::Mqtt(ycyx_mt2));
         transports_result.push(Transport::Mqtt(yt_mt));
         transports_result.push(Transport::Mqtt(yk_mt));
-        println!("{:?}", transports_result);
     }
-    transports_result
+    Ok((transports_result, current_tid))
+}
+
+pub async fn aoes_to_south(aoes: MyAoes, points_mapping: HashMap<String, u64>, current_id: u64) -> Result<Vec<AoeModel>, String> {
+    let mut aoes_result = vec![];
+    let mut current_id = current_id;
+    for a in aoes.aoes {
+        let trigger_type = trigger_type_to_south(a.trigger_type).await?;
+        let variables = variables_to_south(a.variables).await?;
+        current_id = current_id + 1;
+        let aoe = AoeModel {
+            id: current_id,
+            name: a.name,
+            events: vec![],
+            actions: vec![],
+            trigger_type,
+            variables,
+        };
+        aoes_result.push(aoe);
+    }
+    Ok(aoes_result)
+}
+
+async fn trigger_type_to_south(north: MyTriggerType) -> Result<TriggerType, String> {
+    match north {
+        MyTriggerType::SimpleRepeat(v) => {
+            if let Ok(m) = v.parse::<u64>() {
+                Ok(TriggerType::SimpleRepeat(Duration::from_millis(m)))
+            } else {
+                Err("触发类型SimpleRepeat参数错误".to_string())
+            }
+        },
+        MyTriggerType::TimeDrive(v) => Ok(TriggerType::TimeDrive(v)),
+        MyTriggerType::EventDrive(_) => Ok(TriggerType::EventDrive),
+        MyTriggerType::EventRepeatMix(v) => {
+            if let Ok(m) = v.parse::<u64>() {
+                Ok(TriggerType::EventRepeatMix(Duration::from_millis(m)))
+            } else {
+                Err("触发类型EventRepeatMix参数错误".to_string())
+            }
+        },
+        MyTriggerType::EventTimeMix(v) => Ok(TriggerType::EventTimeMix(v)),
+    }
+}
+
+async fn variables_to_south(north: Vec<(String, String)>) -> Result<Vec<(String, Expr)>, String> {
+    Ok(vec![])
 }
