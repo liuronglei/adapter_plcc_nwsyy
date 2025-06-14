@@ -1,0 +1,37 @@
+{
+  "aoes":[
+    {
+      "id": 1,
+      "name": "AOE策略名称",
+      "events": [{
+        "id": 1,
+        "name": "开始节点",
+        "node_type": "ConditionNode",
+        "expr": "max_power/${dev1.tgIa}>100",
+        "timeout": 1000
+      }, {
+        "id": 2,
+        "name": "结束节点",
+        "node_type": "ConditionNode",
+        "expr": "1",
+        "timeout": 15000
+      }],
+      "actions": [{
+        "name": "计算中间量",
+        "source_node": 1,
+        "target_node": 2,
+        "failure_mode": "Default",
+        "action": {
+          "SetPoints": {
+            "discretes": {},
+            "analogs": {"${dev1.tgIb}": "500"}
+          }
+        }
+      }],
+      "trigger_type": {"EventDrive": ""},
+      "variables": [
+        ["max_power", "1500"]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "transports": [
+    {
+      "Mqtt": {
+        "dev_id": "dev1", 
+        "name": "通道名称", 
+        "mqtt_broker": ["192.168.1.2", 1883], 
+        "point_ycyx_ids": ["${dev1.tgIa}", "${dev1.tgIb}"], 
+        "point_yt_ids": ["${dev1.tgIc}", "${dev1.tgUa}"], 
+        "point_yk_ids": ["${dev1.tgUb}", "${dev1.tgUc}"]
+      }
+    }
+  ]
+}
