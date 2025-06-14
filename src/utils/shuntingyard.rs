@@ -1,6 +1,6 @@
 
 use crate::utils::shuntingyard::Associativity::*;
-use crate::model::south::{RPNError, Operation, Token};
+use crate::model::south::{RPNError, Token};
 
 #[derive(Debug, Clone, Copy)]
 enum Associativity {

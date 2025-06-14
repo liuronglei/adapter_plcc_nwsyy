@@ -1,23 +1,25 @@
-/// 目前主要为key_value键值对的存储服务
 use actix_web::{delete, get, HttpResponse, post, put, web};
 use async_channel::{bounded, Sender};
 use log::{info, warn};
 use rocksdb::{DB, Direction, IteratorMode};
 use std::fs::File;
 use std::io::BufReader;
+use std::collections::HashMap;
 
 use crate::db::mydb;
 use crate::{JSON_DATA_PATH, FILE_NAME_POINTS, FILE_NAME_TRANSPORTS, FILE_NAME_AOES};
 use crate::model::north::{MyAoes, MyPoints};
 use crate::model::south::{Measurement};
-use crate::model::{ParserResult, points_to_south};
-use crate::utils::plccapi::update_data;
+use crate::model::{ParserResult, points_to_south, transports_to_south};
+use crate::utils::plccapi::{update_points, update_transports};
+use crate::db::dbutils::*;
 
 const PARSER_TREE: &str = "parser";
 pub const OPERATION_RECEIVE_BUFF_NUM: usize = 100;
 
 pub enum ParserOperation {
     UpdateJson(Sender<ParserResult>),
+    GetPointMapping(Sender<HashMap<u64, String>>),
     // 退出数据库服务
     Quit,
 }
@@ -48,39 +50,49 @@ impl ParserManager {
     async fn do_operation(&self, op: ParserOperation) {
         match op {
             ParserOperation::UpdateJson(sender) => {
-                let file_name_aoes = format!("{JSON_DATA_PATH}/{FILE_NAME_AOES}");
                 let file_name_points = format!("{JSON_DATA_PATH}/{FILE_NAME_POINTS}");
                 let file_name_transports = format!("{JSON_DATA_PATH}/{FILE_NAME_TRANSPORTS}");
-                let points_result = match self.update_points(file_name_points).await {
-                    Ok(()) => ParserResult {
-                        result: true,
-                        err: "".to_string()
-                    },
-                    Err(err) => ParserResult {
-                        result: false,
-                        err
-                    }
+                let file_name_aoes = format!("{JSON_DATA_PATH}/{FILE_NAME_AOES}");
+                let mut points_mapping: HashMap<String, u64> = HashMap::default();
+                let mut result = ParserResult{
+                    result: true,
+                    err: "".to_string()
                 };
-                // self.update_aoes(file_name_aoes);
-                
-                if let Err(e) = sender.send(points_result).await {
+                match self.update_points(file_name_points).await {
+                    Ok(mapping) => points_mapping = mapping.into_iter().collect(),
+                    Err(err) => {
+                        result.result = false;
+                        result.err = err;
+                    }
+                }
+                match self.update_transports(file_name_transports, points_mapping).await {
+                    Ok(()) => {},
+                    Err(err) => {
+                        result.result = false;
+                        result.err = err;
+                    }
+                }
+                if let Err(e) = sender.send(result).await {
                     warn!("!!Failed to send update json : {e:?}");
                 }
+            }
+            ParserOperation::GetPointMapping(sender) => {
+                
             }
             ParserOperation::Quit => {}
         }
     }
 
-    async fn update_points(&self, path: String) -> Result<(), String> {
+    async fn update_points(&self, path: String) -> Result<Vec<(String, u64)>, String> {
         // 打开文件
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
             // 反序列化为对象
             if let Ok(points) = serde_json::from_reader(reader) {
                 let (new_points, points_mapping) = points_to_south(points);
-                let _ = update_data(new_points).await?;
-                self.save_point_mapping(points_mapping);
-                Ok(())
+                let _ = update_points(new_points).await?;
+                self.save_point_mapping(points_mapping.clone());
+                Ok(points_mapping)
             } else {
                 Err("测点JSON解析失败".to_string())
             }
@@ -89,21 +101,20 @@ impl ParserManager {
         }
     }
 
-    async fn update_transports(&self, path: String) -> Result<(), String> {
+    async fn update_transports(&self, path: String, points_mapping: HashMap<String, u64>) -> Result<(), String> {
         // 打开文件
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
             // 反序列化为对象
-            if let Ok(points) = serde_json::from_reader(reader) {
-                let (new_points, points_mapping) = points_to_south(points);
-                let _ = update_data(new_points).await?;
-                self.save_point_mapping(points_mapping);
+            if let Ok(transports) = serde_json::from_reader(reader) {
+                let new_transports= transports_to_south(transports, points_mapping);
+                let _ = update_transports(new_transports).await?;
                 Ok(())
             } else {
-                Err("测点JSON解析失败".to_string())
+                Err("通道JSON解析失败".to_string())
             }
         } else {
-            Err("测点JSON文件不存在".to_string())
+            Err("通道JSON文件不存在".to_string())
         }
     }
 
@@ -120,8 +131,18 @@ impl ParserManager {
         }
     }
 
-    fn save_point_mapping(&self, points_mapping: Vec<(u64, String)>) {
-
+    fn save_point_mapping(&self, points_mapping: Vec<(String, u64)>) {
+        let mut keys = Vec::with_capacity(points_mapping.len());
+        let mut values = Vec::with_capacity(points_mapping.len());
+        for (ptag, pid) in points_mapping {
+            keys.push(ptag.as_bytes().to_vec());
+            values.push(pid.to_string().as_bytes().to_vec());
+        }
+        if save_items_to_db_with_tree_name(&self.inner_db, PARSER_TREE, &keys, &values) {
+            info!("insert point mapping success");
+        } else {
+            warn!("!!Failed to insert point mapping");
+        }
     }
 
 }
@@ -155,6 +176,19 @@ pub fn start_parser_service(parser_db_dir: String) -> Sender<ParserOperation> {
 
 #[get("/api/v1/parser/update_json")]
 async fn update_json(
+    sender: web::Data<Sender<ParserOperation>>,
+) -> HttpResponse {
+    let (tx, rx) = bounded(1);
+    if let Ok(()) = sender.send(ParserOperation::UpdateJson(tx)).await {
+        if let Ok(r) = rx.recv().await {
+            return HttpResponse::Ok().content_type("application/json").json(r);
+        }
+    }
+    HttpResponse::RequestTimeout().finish()
+}
+
+#[get("/api/v1/parser/point_mapping")]
+async fn get_point_mapping(
     sender: web::Data<Sender<ParserOperation>>,
 ) -> HttpResponse {
     let (tx, rx) = bounded(1);

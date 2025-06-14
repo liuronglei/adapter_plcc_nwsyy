@@ -13,15 +13,24 @@ const HEADER_TOKEN: &str = "access-token";
 
 type HmacSha256 = Hmac<Sha256>;
 
-pub async fn update_data(points: Vec<Measurement>) -> Result<(), String> {
+pub async fn update_points(points: Vec<Measurement>) -> Result<(), String> {
     let token = login().await?;
-    // 进行测点更新操作
     let old_points = query_points(token.clone()).await?;
     let pids = old_points.iter().map(|v| v.point_id).collect::<Vec<u64>>();
     if !pids.is_empty() {
         delete_points(token.clone(), pids).await?;
     }
     save_points(token, points).await
+}
+
+pub async fn update_transports(transports: Vec<Transport>) -> Result<(), String> {
+    let token = login().await?;
+    let old_transports = query_transports(token.clone()).await?;
+    let tids = old_transports.iter().map(|v| v.id()).collect::<Vec<u64>>();
+    if !tids.is_empty() {
+        delete_transports(token.clone(), tids).await?;
+    }
+    save_transports(token, transports).await
 }
 
 async fn delete_points(token: String, ids: Vec<u64>) -> Result<(), String> {
@@ -72,7 +81,11 @@ async fn save_points(token: String, points: Vec<Measurement>) -> Result<(), Stri
 }
 
 async fn delete_transports(token: String, ids: Vec<u64>) -> Result<(), String> {
-    let url = format!("{PLCC_HOST}/{URL_TRANSPORTS}");
+    let ids = ids.iter()
+        .map(|n| n.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let url = format!("{PLCC_HOST}/{URL_TRANSPORTS}/{ids}");
     let headers = get_header(token);
     let client = Client::new();
     let response = client
@@ -102,14 +115,14 @@ async fn query_transports(token: String) -> Result<Vec<Transport>, String> {
     }
 }
 
-async fn save_transports(token: String, points: Vec<Transport>) -> Result<(), String> {
+async fn save_transports(token: String, transports: Vec<Transport>) -> Result<(), String> {
     let url = format!("{PLCC_HOST}/{URL_TRANSPORTS}");
     let headers = get_header(token);
     let client = Client::new();
     let response = client
         .post(&url)
         .headers(headers)
-        .json(&points)
+        .json(&transports)
         .send().await.unwrap();
     if response.status() == StatusCode::OK {
         Ok(())
