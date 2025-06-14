@@ -86,7 +86,7 @@ pub struct MyAoe {
     /// aoe name
     pub name: String,
     /// 节点
-    pub events: Vec<crate::model::south::EventNode>,
+    pub events: Vec<MyEventNode>,
     /// 边
     pub actions: Vec<MyActionEdge>,
     /// aoe启动的方式
@@ -95,9 +95,19 @@ pub struct MyAoe {
     pub variables: Vec<(String, String)>,
 }
 
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct MyEventNode {
+    pub id: u64,
+    pub name: String,
+    pub node_type: crate::model::south::NodeType,
+    pub expr: String,
+    /// 事件还未发生的等待超时时间
+    pub timeout: u64,
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct MyActionEdge {
-    pub aoe_id: u64,
     pub name: String,
     pub source_node: u64,
     pub target_node: u64,
