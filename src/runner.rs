@@ -1,18 +1,18 @@
-use log::{debug, error, info, trace, warn};
+use log::info;
 
-use actix::*;
 use actix_cors::Cors;
-use actix_files::NamedFile;
 use actix_web::{App, HttpServer, web};
-use actix_web::Error;
 use actix_web::middleware::Compress;
 use actix_web::web::Data;
-use tokio::task::JoinHandle;
-use crate::DB_PATH_PARSER;
+use crate::{DB_PATH_PARSER, MQTT_HOST, MQTT_PORT, HTTP_PORT};
 use crate::parser::{start_parser_service, config_parser_web_service};
+use crate::utils::mqttclient::do_register_and_query;
+use crate::utils::plccapi::aoe_result_upload;
 
 pub async fn run_adapter() -> std::io::Result<()> {
-    let http_server_port = 8088;
+    // APP注册和数据查询
+    let _ = do_register_and_query("plcc_register", MQTT_HOST, MQTT_PORT).await;
+    let _ = aoe_result_upload().await;
     let parser_sender = start_parser_service(DB_PATH_PARSER.to_string());
     let cloned_parser_sender = Data::new(parser_sender.clone());
     let actix_web_job = std::thread::spawn(move || {
@@ -20,8 +20,8 @@ pub async fn run_adapter() -> std::io::Result<()> {
         let actix_rt = actix_rt::Runtime::new().expect("!!Failed to build actix web runtime.");
         actix_rt.block_on(async move {
             // 启动web服务，提供resutful服务
-            let addr = format!("0.0.0.0:{http_server_port}");
-            println!("Http server addr: {}", addr);
+            let addr = format!("0.0.0.0:{HTTP_PORT}");
+            info!("Http server addr: {}", addr);
             let app = HttpServer::new(move || {
                 let cors = Cors::default()
                     .allow_any_origin()

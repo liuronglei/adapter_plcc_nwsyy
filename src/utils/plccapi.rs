@@ -1,12 +1,19 @@
-use std::sync::{LazyLock, Mutex};
+use std::collections::HashMap;
+
 use reqwest::{Client, StatusCode};
-use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE, AUTHORIZATION};
-use serde_json::{json, Value};
+use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+use serde_json::json;
 use base64::{Engine, engine::general_purpose::STANDARD as b64_standard};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-use crate::model::south::{AoeModel, Measurement, Transport};
-use crate::{PLCC_HOST, PLCC_USR, PLCC_PWD, URL_LOGIN, URL_POINTS, URL_TRANSPORTS, URL_AOES};
+use tokio::time::{interval, Duration};
+use crate::model::aoe_action_result_to_north;
+use crate::model::south::{AoeModel, Measurement, PbAoeResults, Transport};
+use crate::model::north::{MyPbAoeResult, MyPbActionResult};
+use crate::utils::mqttclient::generate_aoe_result;
+use crate::utils::point_param_map;
+use crate::{PLCC_HOST, PLCC_USR, PLCC_PWD, URL_LOGIN, URL_POINTS, URL_TRANSPORTS,
+    URL_AOES, URL_AOE_RESULTS, MQTT_HOST, MQTT_PORT, APP_NAME};
 
 const PASSWORD_V_KEY: &[u8] = b"zju-plcc";
 const HEADER_TOKEN: &str = "access-token";
@@ -236,4 +243,83 @@ fn get_header(token: String) -> HeaderMap {
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     headers.insert(HEADER_TOKEN, HeaderValue::from_str(&token).unwrap());
     headers
+}
+
+pub async fn aoe_result_upload() -> Result<(), String> {
+    tokio::spawn(async {
+        if let Err(e) = aoe_upload_loop().await {
+            log::error!("策略结果定时上传任务失败：{}", e);
+        }
+    });
+    Ok(())
+}
+
+async fn aoe_upload_loop() -> Result<(), String> {
+    let mut ticker = interval(Duration::from_secs(5));
+    let mut count = 0;
+    let mut token = login().await?;
+    let mut last_time: HashMap<u64, u64> = HashMap::new();
+
+    let mut mqttoptions = rumqttc::MqttOptions::new("plcc_aoe_result", MQTT_HOST, MQTT_PORT);
+    mqttoptions.set_keep_alive(Duration::from_secs(5));
+    // mqttoptions.set_credentials("username", "password");
+    let topic_request_upload = format!("/sys.brd/{APP_NAME}/S-dataservice/F-UpdateSOE");
+    let (client, _) = rumqttc::AsyncClient::new(mqttoptions, 10);
+    loop {
+        if count >= 86400 {
+            token = login().await?;
+            count = 0;
+        }
+        count += 1;
+        ticker.tick().await;
+        let aoe_results = query_aoe_result(token.clone()).await?;
+        let points_mapping = point_param_map::get_all();
+        let my_aoe_result = aoe_results.results.iter()
+            .filter(|a| {
+                let aoe_id = a.aoe_id.unwrap();
+                let end_time = a.end_time.unwrap();
+                if let Some(v) = last_time.get(&aoe_id) {
+                    *v != end_time
+                } else {
+                    last_time.insert(aoe_id, end_time);
+                    true
+                }
+            })
+            .map(|a|{
+                let action_results = a.action_results.iter().filter_map(|action_result|{
+                    aoe_action_result_to_north(action_result.clone(), &points_mapping).ok()
+                }).collect::<Vec<MyPbActionResult>>();
+                MyPbAoeResult {
+                    aoe_id: a.aoe_id,
+                    start_time: a.start_time,
+                    end_time: a.end_time,
+                    event_results: a.event_results.clone(),
+                    action_results,
+                }
+            }).collect::<Vec<MyPbAoeResult>>();
+        if !my_aoe_result.is_empty() {
+            let body = generate_aoe_result(my_aoe_result);
+            let payload = serde_json::to_string(&body).unwrap();
+            client
+                .publish(topic_request_upload.clone(), rumqttc::QoS::AtMostOnce, false, payload)
+                .await
+                .unwrap();
+        }
+
+    }
+}
+
+async fn query_aoe_result(token: String) -> Result<PbAoeResults, String> {
+    let url = format!("{PLCC_HOST}/{URL_AOE_RESULTS}?last_only=true");
+    let headers = get_header(token);
+    let client = Client::new();
+    let response = client
+        .get(&url)
+        .headers(headers)
+        .send().await.unwrap();
+    if let Ok(aoe_results) = response.json::<PbAoeResults>().await {
+        Ok(aoe_results)
+    } else {
+        Err("调用策略执行结果API获取测点失败".to_string())
+    }
 }

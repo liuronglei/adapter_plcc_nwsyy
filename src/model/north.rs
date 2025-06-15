@@ -1,8 +1,6 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Number, Value};
-use derive_more::with_trait::{Display, FromStr};
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct MyTransports {
@@ -212,4 +210,29 @@ impl MyTransport {
             MyTransport::Mqtt(t) => t.point_yk_ids.clone(),
         }
     }
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Clone, Default, Debug)]
+pub struct MyPbAoeResult {
+    pub aoe_id: Option<u64>,
+    pub start_time: Option<u64>,
+    pub end_time: Option<u64>,
+    pub event_results: Vec<crate::model::south::PbEventResult>,
+    pub action_results: Vec<MyPbActionResult>,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct MyPbActionResult {
+    pub source_id: Option<u64>,
+    pub target_id: Option<u64>,
+    pub start_time: Option<u64>,
+    pub end_time: Option<u64>,
+    pub final_result: Option<crate::model::south::ActionExeResult>,
+    pub fail_code: Option<u32>,
+    pub yk_points: Vec<String>,
+    pub yk_values: Vec<i64>,
+    pub yt_points: Vec<String>,
+    pub yt_values: Vec<f64>,
+    pub variables: Vec<String>,
+    pub var_values: Vec<f64>,
 }
