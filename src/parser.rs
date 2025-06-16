@@ -269,12 +269,14 @@ pub fn config_parser_web_service(cfg: &mut web::ServiceConfig) {
 }
 
 async fn query_dev_guid(transports: &MyTransports) -> Result<HashMap<String, String>, String> {
+    let env = Env::get_env(APP_NAME);
+    let mqtt_server = env.get_mqtt_server();
+    let mqtt_server_port = env.get_mqtt_server_port();
     if transports.transports.is_empty() {
         return Err("通道为空".to_string());
     }
     let dev_ids = transports.transports.iter().map(|t|t.dev_id()).collect::<Vec<_>>();
-    let (host, port) = transports.transports.first().unwrap().mqtt_broker();
-    do_query_dev("plcc_dev", &host, port, dev_ids).await
+    do_query_dev("plcc_dev", &mqtt_server, mqtt_server_port, dev_ids).await
     // let mut a = HashMap::new();
     // a.insert("dev1".to_string(), "a_guid".to_string());
     // Ok(a)
