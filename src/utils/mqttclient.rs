@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use rumqttc::{AsyncClient, Event, Incoming, MqttOptions, QoS};
+use rumqttc::{AsyncClient, Event, Incoming, MqttOptions, QoS, Client};
 use tokio::time::Duration;
 use tokio::sync::oneshot;
 use chrono::Local;
@@ -20,6 +20,15 @@ pub async fn client_subscribe(client: &AsyncClient, topic: &str) -> Result<(), S
 
 pub async fn client_publish(client: &AsyncClient, topic: &str, payload: &str) -> Result<(), String> {
     match client.publish(topic, QoS::AtMostOnce, false, payload).await {
+        Ok(_) => Ok(()),
+        Err(v) => {
+            Err(v.to_string())
+        }
+    }
+}
+
+pub async fn client_publish_sync(client: &Client, topic: &str, payload: &str) -> Result<(), String> {
+    match client.publish(topic, QoS::AtMostOnce, false, payload) {
         Ok(_) => Ok(()),
         Err(v) => {
             Err(v.to_string())
@@ -149,11 +158,11 @@ pub async fn do_data_query(name: &str, host: &str, port: u16) -> Result<(), Stri
     let mut mqttoptions = MqttOptions::new(name, host, port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     // mqttoptions.set_credentials("username", "password");
-    let (client, _) = AsyncClient::new(mqttoptions, 10);
+    let (client, _) = Client::new(mqttoptions, 10);
     let topic_request_query = format!("/svc.dbc/{APP_NAME}/S-dataservice/F-GetRealData");
     let payload = serde_json::to_string(&generate_query_data()).unwrap();
     println!("进入数据查询流程3");
-    client_publish(&client, &topic_request_query, &payload).await?;
+    client_publish_sync(&client, &topic_request_query, &payload).await?;
     log::info!("数据查询流程结束");
     println!("数据查询流程结束");
     Ok(())
