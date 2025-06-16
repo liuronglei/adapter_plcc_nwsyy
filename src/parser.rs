@@ -7,13 +7,14 @@ use std::io::BufReader;
 use std::collections::HashMap;
 
 use crate::db::mydb;
-use crate::{JSON_DATA_PATH, FILE_NAME_POINTS, FILE_NAME_TRANSPORTS, FILE_NAME_AOES};
+use crate::APP_NAME;
 use crate::model::north::MyTransports;
 use crate::model::{ParserResult, points_to_south, transports_to_south, aoes_to_south};
 use crate::utils::plccapi::{update_points, update_transports, update_aoes, do_reset};
 use crate::utils::mqttclient::do_query_dev;
 use crate::db::dbutils::*;
 use crate::utils::{param_point_map, point_param_map};
+use crate::env::Env;
 
 const POINT_TREE: &str = "point";
 const DEV_TREE: &str = "dev";
@@ -52,11 +53,16 @@ impl ParserManager {
     }
 
     async fn do_operation(&self, op: ParserOperation) {
+        let env = Env::get_env(APP_NAME);
+        let json_dir = env.get_json_dir();
+        let point_dir = env.get_point_dir();
+        let transport_dir = env.get_transport_dir();
+        let aoe_dir = env.get_aoe_dir();
         match op {
             ParserOperation::UpdateJson(sender) => {
-                let file_name_points = format!("{JSON_DATA_PATH}/{FILE_NAME_POINTS}");
-                let file_name_transports = format!("{JSON_DATA_PATH}/{FILE_NAME_TRANSPORTS}");
-                let file_name_aoes = format!("{JSON_DATA_PATH}/{FILE_NAME_AOES}");
+                let file_name_points = format!("{json_dir}/{point_dir}");
+                let file_name_transports = format!("{json_dir}/{transport_dir}");
+                let file_name_aoes = format!("{json_dir}/{aoe_dir}");
                 let mut points_mapping: HashMap<String, u64> = HashMap::default();
                 let mut result = ParserResult{
                     result: true,
