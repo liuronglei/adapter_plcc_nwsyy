@@ -6,7 +6,7 @@ use actix_web::middleware::Compress;
 use actix_web::web::Data;
 use crate::APP_NAME;
 use crate::parser::{start_parser_service, config_parser_web_service};
-use crate::utils::mqttclient::do_register_and_query;
+use crate::utils::mqttclient::{do_register, do_data_query};
 use crate::utils::plccapi::aoe_result_upload;
 use crate::env::Env;
 
@@ -18,7 +18,8 @@ pub async fn run_adapter() -> std::io::Result<()> {
     let mqtt_server_port = env.get_mqtt_server_port();
     let data_path = env.get_db_dir();
     // APP注册和数据查询
-    let _ = do_register_and_query("plcc_register", &mqtt_server, mqtt_server_port).await;
+    let _ = do_register("plcc_register", &mqtt_server, mqtt_server_port).await;
+    let _ = do_data_query("plcc_data_query", &mqtt_server, mqtt_server_port).await;
     let _ = aoe_result_upload().await;
     let parser_sender = start_parser_service(data_path.to_string());
     let cloned_parser_sender = Data::new(parser_sender.clone());
