@@ -18,6 +18,7 @@ pub async fn run_adapter() -> std::io::Result<()> {
     let mqtt_server_port = env.get_mqtt_server_port();
     let data_path = env.get_db_dir();
     // APP注册和数据查询
+    println!("进入注册流程结束");
     match do_register("plcc_register", &mqtt_server, mqtt_server_port).await {
         Ok(_) => {},
         Err(err) => {
@@ -25,6 +26,7 @@ pub async fn run_adapter() -> std::io::Result<()> {
             println!("{err}");
         },
     }
+    log::info!("注册流程结束");
     println!("进入数据查询流程");
     match do_data_query("plcc_data_query", &mqtt_server, mqtt_server_port).await {
         Ok(_) => {},
@@ -33,7 +35,17 @@ pub async fn run_adapter() -> std::io::Result<()> {
             println!("{err}");
         },
     }
-    let _ = aoe_result_upload().await;
+    println!("数据查询流程结束");
+    println!("进入AOE结果监听流程");
+    match aoe_result_upload().await {
+        Ok(_) => {},
+        Err(err) => {
+            log::error!("{err}");
+            println!("{err}");
+        },
+    }
+    println!("AOE结果监听流程结束");
+    println!("开始启动API服务");
     let parser_sender = start_parser_service(data_path.to_string());
     let cloned_parser_sender = Data::new(parser_sender.clone());
     let actix_web_job = std::thread::spawn(move || {

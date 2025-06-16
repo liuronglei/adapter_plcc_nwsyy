@@ -10,7 +10,7 @@ use tokio::time::{interval, Duration};
 use crate::model::aoe_action_result_to_north;
 use crate::model::south::{AoeModel, Measurement, PbAoeResults, Transport};
 use crate::model::north::{MyPbAoeResult, MyPbActionResult};
-use crate::utils::mqttclient::{client_publish, client_publish_sync, generate_aoe_result};
+use crate::utils::mqttclient::{client_publish, generate_aoe_result};
 use crate::utils::point_param_map;
 use crate::{URL_LOGIN, URL_POINTS, URL_TRANSPORTS,
     URL_AOES, URL_AOE_RESULTS, URL_RESET, APP_NAME};
@@ -346,7 +346,7 @@ async fn aoe_upload_loop() -> Result<(), String> {
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     // mqttoptions.set_credentials("username", "password");
     let topic_request_upload = format!("/sys.brd/{APP_NAME}/S-dataservice/F-UpdateSOE");
-    let (client, _) = rumqttc::Client::new(mqttoptions, 10);
+    let (client, e) = rumqttc::AsyncClient::new(mqttoptions, 10);
     loop {
         if count >= 86400 {
             token = login().await?;
@@ -382,7 +382,7 @@ async fn aoe_upload_loop() -> Result<(), String> {
         if !my_aoe_result.is_empty() {
             let body = generate_aoe_result(my_aoe_result);
             let payload = serde_json::to_string(&body).unwrap();
-            client_publish_sync(&client, &topic_request_upload, &payload).await?;
+            client_publish(&client, &topic_request_upload, &payload).await?;
         }
 
     }
