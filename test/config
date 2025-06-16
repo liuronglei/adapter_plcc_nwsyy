@@ -1,0 +1,10 @@
+httpServerPort = 8088
+mqttServer = localhost:1883
+jsonFileDir = C:/project/other/test_file
+dbFileDir = C:/project/other/test_file/parser
+pointFileDir = points.json
+transportFileDir = transports.json
+aoeFileDir = aoes.json
+plccServer = http://localhost:8181
+plccUser = admin
+plccPwd = easy2021
