@@ -10,7 +10,7 @@ use tokio::time::{interval, Duration};
 use crate::model::aoe_action_result_to_north;
 use crate::model::south::{AoeModel, Measurement, PbAoeResults, Transport};
 use crate::model::north::{MyPbAoeResult, MyPbActionResult};
-use crate::utils::mqttclient::generate_aoe_result;
+use crate::utils::mqttclient::{client_publish, generate_aoe_result};
 use crate::utils::point_param_map;
 use crate::{URL_LOGIN, URL_POINTS, URL_TRANSPORTS,
     URL_AOES, URL_AOE_RESULTS, URL_RESET, APP_NAME};
@@ -382,10 +382,7 @@ async fn aoe_upload_loop() -> Result<(), String> {
         if !my_aoe_result.is_empty() {
             let body = generate_aoe_result(my_aoe_result);
             let payload = serde_json::to_string(&body).unwrap();
-            client
-                .publish(topic_request_upload.clone(), rumqttc::QoS::AtMostOnce, false, payload)
-                .await
-                .unwrap();
+            client_publish(&client, &topic_request_upload, &payload).await?;
         }
 
     }

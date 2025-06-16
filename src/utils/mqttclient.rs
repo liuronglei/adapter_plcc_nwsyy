@@ -9,6 +9,24 @@ use crate::APP_NAME;
 use crate::model::datacenter::{DataQuery, DataQueryBody, QueryDev, QueryDevResponse, Register, RegisterBody, RegisterResponse};
 use crate::model::datacenter::{AoeResult, AoeResultBody};
 
+pub async fn client_subscribe(client: &AsyncClient, topic: &str) -> Result<(), String> {
+    match client.subscribe(topic, QoS::AtMostOnce).await {
+        Ok(_) => Ok(()),
+        Err(v) => {
+            Err(v.to_string())
+        }
+    }
+}
+
+pub async fn client_publish(client: &AsyncClient, topic: &str, payload: &str) -> Result<(), String> {
+    match client.publish(topic, QoS::AtMostOnce, false, payload).await {
+        Ok(_) => Ok(()),
+        Err(v) => {
+            Err(v.to_string())
+        }
+    }
+}
+
 pub async fn do_query_dev(name: &str, host: &str, port: u16, dev_ids: Vec<String>) -> Result<HashMap<String, String>, String> {
     let mut mqttoptions = MqttOptions::new(name, host, port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
@@ -17,14 +35,11 @@ pub async fn do_query_dev(name: &str, host: &str, port: u16, dev_ids: Vec<String
     let topic_response_query_dev = format!("{APP_NAME}/ext.syy.subota//S-otaservice/F-GetNodeInfo");
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
     // 订阅查询消息返回
-    client.subscribe(topic_response_query_dev.clone(), QoS::AtMostOnce).await.unwrap();
+    client_subscribe(&client, &topic_response_query_dev).await?;
     // 发布查询消息
     let body = generate_query_dev(dev_ids);
     let payload = serde_json::to_string(&body).unwrap();
-    client
-        .publish(topic_request_query_dev, QoS::AtMostOnce, false, payload)
-        .await
-        .unwrap();
+    client_publish(&client, &topic_request_query_dev, &payload).await?;
     // 处理订阅消息
     let (tx, rx) = oneshot::channel::<Result<HashMap<String, String>, String>>();
     tokio::spawn(async move {
@@ -73,14 +88,11 @@ pub async fn do_register_and_query(name: &str, host: &str, port: u16) -> Result<
     let topic_response_register = format!("/{APP_NAME}/svc.dbc/S-dataservice/F-Register");
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
     // 订阅注册消息返回
-    client.subscribe(topic_response_register.clone(), QoS::AtMostOnce).await.unwrap();
+    client_subscribe(&client, &topic_response_register).await?;
     // 发布注册消息
     let body = generate_register();
     let payload = serde_json::to_string(&body).unwrap();
-    client
-        .publish(topic_request_register, QoS::AtMostOnce, false, payload)
-        .await
-        .unwrap();
+    client_publish(&client, &topic_request_register, &payload).await?;
     // 处理订阅消息
     let (tx, rx) = oneshot::channel::<Result<bool, String>>();
     tokio::spawn(async move {
@@ -131,14 +143,7 @@ pub async fn do_register_and_query(name: &str, host: &str, port: u16) -> Result<
     let topic_request_query = format!("/svc.dbc/{APP_NAME}/S-dataservice/F-GetRealData");
     // 发布数据查询消息
     let payload = serde_json::to_string(&generate_query_data()).unwrap();
-    match client
-        .publish(topic_request_query, QoS::AtMostOnce, false, payload)
-        .await {
-        Ok(_) => {},
-        Err(v) => {
-            println!("{:?}", v);
-        }
-    }
+    client_publish(&client, &topic_request_query, &payload).await?;
     log::info!("数据查询流程结束");
     Ok(())
 }
