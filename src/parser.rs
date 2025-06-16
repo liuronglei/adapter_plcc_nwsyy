@@ -5,13 +5,14 @@ use rocksdb::DB;
 use std::fs::File;
 use std::io::BufReader;
 use std::collections::HashMap;
+use std::thread::sleep;
 
 use crate::db::mydb;
 use crate::APP_NAME;
 use crate::model::north::MyTransports;
 use crate::model::{ParserResult, points_to_south, transports_to_south, aoes_to_south};
 use crate::utils::plccapi::{update_points, update_transports, update_aoes, do_reset};
-use crate::utils::mqttclient::do_query_dev;
+use crate::utils::mqttclient::{do_query_dev, do_data_query};
 use crate::db::dbutils::*;
 use crate::utils::{param_point_map, point_param_map};
 use crate::env::Env;
@@ -59,6 +60,8 @@ impl ParserManager {
         let point_dir = env.get_point_dir();
         let transport_dir = env.get_transport_dir();
         let aoe_dir = env.get_aoe_dir();
+        let mqtt_server = env.get_mqtt_server();
+        let mqtt_server_port = env.get_mqtt_server_port();
         println!("开始解析JSON文件");
         match op {
             ParserOperation::UpdateJson(sender) => {
@@ -107,6 +110,17 @@ impl ParserManager {
                     }
                 }
                 println!("调用reset结束");
+                println!("进入数据查询流程");
+                // 等待2秒
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                match do_data_query("plcc_data_query", &mqtt_server, mqtt_server_port).await {
+                    Ok(()) => {},
+                    Err(err) => {
+                        result.result = false;
+                        result.err = err;
+                    },
+                }
+                println!("数据查询流程结束");
                 // 保存到全局变量中
                 param_point_map::save_all(points_mapping.clone());
                 point_param_map::save_reversal(points_mapping);
