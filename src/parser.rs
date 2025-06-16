@@ -79,6 +79,7 @@ impl ParserManager {
                         result.err = err;
                     }
                 }
+                println!("解析测点JSON文件结束");
                 println!("开始解析通道JSON文件");
                 match self.parse_transports(file_name_transports, &points_mapping).await {
                     Ok(id) => current_id = id,
@@ -87,6 +88,7 @@ impl ParserManager {
                         result.err = err;
                     }
                 }
+                println!("解析通道JSON文件结束");
                 println!("开始解析策略JSON文件");
                 match self.parse_aoes(file_name_aoes, &points_mapping, current_id).await {
                     Ok(()) => {},
@@ -95,6 +97,8 @@ impl ParserManager {
                         result.err = err;
                     }
                 }
+                println!("解析策略JSON文件结束");
+                println!("开始调用reset");
                 match do_reset().await {
                     Ok(()) => {},
                     Err(err) => {
@@ -102,6 +106,7 @@ impl ParserManager {
                         result.err = err;
                     }
                 }
+                println!("调用reset结束");
                 // 保存到全局变量中
                 param_point_map::save_all(points_mapping.clone());
                 point_param_map::save_reversal(points_mapping);
