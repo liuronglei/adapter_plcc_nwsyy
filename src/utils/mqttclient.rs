@@ -131,10 +131,14 @@ pub async fn do_register_and_query(name: &str, host: &str, port: u16) -> Result<
     let topic_request_query = format!("/svc.dbc/{APP_NAME}/S-dataservice/F-GetRealData");
     // 发布数据查询消息
     let payload = serde_json::to_string(&generate_query_data()).unwrap();
-    client
+    match client
         .publish(topic_request_query, QoS::AtMostOnce, false, payload)
-        .await
-        .unwrap();
+        .await {
+        Ok(_) => {},
+        Err(v) => {
+            println!("{:?}", v);
+        }
+    }
     log::info!("数据查询流程结束");
     Ok(())
 }
