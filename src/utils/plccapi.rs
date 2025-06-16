@@ -13,7 +13,7 @@ use crate::model::north::{MyPbAoeResult, MyPbActionResult};
 use crate::utils::mqttclient::generate_aoe_result;
 use crate::utils::point_param_map;
 use crate::{PLCC_HOST, PLCC_USR, PLCC_PWD, URL_LOGIN, URL_POINTS, URL_TRANSPORTS,
-    URL_AOES, URL_AOE_RESULTS, MQTT_HOST, MQTT_PORT, APP_NAME};
+    URL_AOES, URL_AOE_RESULTS, URL_RESET, MQTT_HOST, MQTT_PORT, APP_NAME};
 
 const PASSWORD_V_KEY: &[u8] = b"zju-plcc";
 const HEADER_TOKEN: &str = "access-token";
@@ -50,19 +50,27 @@ pub async fn update_aoes(aoes: Vec<AoeModel>) -> Result<(), String> {
     save_aoes(token, aoes).await
 }
 
+pub async fn do_reset() -> Result<(), String> {
+    let token = login().await?;
+    reset(token).await
+}
+
 async fn delete_points(token: String, ids: Vec<u64>) -> Result<(), String> {
     let url = format!("{PLCC_HOST}/{URL_POINTS}");
     let headers = get_header(token);
     let client = Client::new();
-    let response = client
+    if let Ok(response) = client
         .delete(&url)
         .headers(headers)
         .json(&ids)
-        .send().await.unwrap();
-    if response.status() == StatusCode::OK {
-        Ok(())
+        .send().await {
+        if response.status() == StatusCode::OK {
+            Ok(())
+        } else {
+            Err("调用测点API删除测点失败".to_string())
+        }
     } else {
-        Err("调用测点API删除测点失败".to_string())
+        Err("连接PLCC失败".to_string())
     }
 }
 
@@ -70,14 +78,17 @@ async fn query_points(token: String) -> Result<Vec<Measurement>, String> {
     let url = format!("{PLCC_HOST}/{URL_POINTS}");
     let headers = get_header(token);
     let client = Client::new();
-    let response = client
+    if let Ok(response) = client
         .get(&url)
         .headers(headers)
-        .send().await.unwrap();
-    if let Ok(points) = response.json::<Vec<Measurement>>().await {
-        Ok(points)
+        .send().await {
+        if let Ok(points) = response.json::<Vec<Measurement>>().await {
+            Ok(points)
+        } else {
+            Err("调用测点API获取测点失败".to_string())
+        }
     } else {
-        Err("调用测点API获取测点失败".to_string())
+        Err("连接PLCC失败".to_string())
     }
 }
 
@@ -85,15 +96,18 @@ async fn save_points(token: String, points: Vec<Measurement>) -> Result<(), Stri
     let url = format!("{PLCC_HOST}/{URL_POINTS}");
     let headers = get_header(token);
     let client = Client::new();
-    let response = client
+    if let Ok(response) = client
         .post(&url)
         .headers(headers)
         .json(&points)
-        .send().await.unwrap();
-    if response.status() == StatusCode::OK {
-        Ok(())
+        .send().await {
+        if response.status() == StatusCode::OK {
+            Ok(())
+        } else {
+            Err("调用测点API新增测点失败".to_string())
+        }
     } else {
-        Err("调用测点API新增测点失败".to_string())
+        Err("连接PLCC失败".to_string())
     }
 }
 
@@ -105,15 +119,18 @@ async fn delete_transports(token: String, ids: Vec<u64>) -> Result<(), String> {
     let url = format!("{PLCC_HOST}/{URL_TRANSPORTS}/{ids}");
     let headers = get_header(token);
     let client = Client::new();
-    let response = client
+    if let Ok(response) = client
         .delete(&url)
         .headers(headers)
         .json(&ids)
-        .send().await.unwrap();
-    if response.status() == StatusCode::OK {
-        Ok(())
+        .send().await {
+        if response.status() == StatusCode::OK {
+            Ok(())
+        } else {
+            Err("调用通道API删除通道失败".to_string())
+        }
     } else {
-        Err("调用通道API删除通道失败".to_string())
+        Err("连接PLCC失败".to_string())
     }
 }
 
@@ -121,14 +138,17 @@ async fn query_transports(token: String) -> Result<Vec<Transport>, String> {
     let url = format!("{PLCC_HOST}/{URL_TRANSPORTS}");
     let headers = get_header(token);
     let client = Client::new();
-    let response = client
+    if let Ok(response) = client
         .get(&url)
         .headers(headers)
-        .send().await.unwrap();
-    if let Ok(transports) = response.json::<Vec<Transport>>().await {
-        Ok(transports)
+        .send().await {
+        if let Ok(transports) = response.json::<Vec<Transport>>().await {
+            Ok(transports)
+        } else {
+            Err("调用通道API获取通道失败".to_string())
+        }
     } else {
-        Err("调用通道API获取通道失败".to_string())
+        Err("连接PLCC失败".to_string())
     }
 }
 
@@ -136,15 +156,18 @@ async fn save_transports(token: String, transports: Vec<Transport>) -> Result<()
     let url = format!("{PLCC_HOST}/{URL_TRANSPORTS}");
     let headers = get_header(token);
     let client = Client::new();
-    let response = client
+    if let Ok(response) = client
         .post(&url)
         .headers(headers)
         .json(&transports)
-        .send().await.unwrap();
-    if response.status() == StatusCode::OK {
-        Ok(())
+        .send().await {
+        if response.status() == StatusCode::OK {
+            Ok(())
+        } else {
+            Err("调用通道API新增通道失败".to_string())
+        }
     } else {
-        Err("调用通道API新增通道失败".to_string())
+        Err("连接PLCC失败".to_string())
     }
 }
 
@@ -156,15 +179,18 @@ async fn delete_aoes(token: String, ids: Vec<u64>) -> Result<(), String> {
     let url = format!("{PLCC_HOST}/{URL_AOES}/{ids}");
     let headers = get_header(token);
     let client = Client::new();
-    let response = client
+    if let Ok(response) = client
         .delete(&url)
         .headers(headers)
         .json(&ids)
-        .send().await.unwrap();
-    if response.status() == StatusCode::OK {
-        Ok(())
+        .send().await {
+        if response.status() == StatusCode::OK {
+            Ok(())
+        } else {
+            Err("调用策略API删除策略失败".to_string())
+        }
     } else {
-        Err("调用策略API删除策略失败".to_string())
+        Err("连接PLCC失败".to_string())
     }
 }
 
@@ -172,14 +198,17 @@ async fn query_aoes(token: String) -> Result<Vec<AoeModel>, String> {
     let url = format!("{PLCC_HOST}/{URL_AOES}");
     let headers = get_header(token);
     let client = Client::new();
-    let response = client
+    if let Ok(response) = client
         .get(&url)
         .headers(headers)
-        .send().await.unwrap();
-    if let Ok(aoes) = response.json::<Vec<AoeModel>>().await {
-        Ok(aoes)
+        .send().await {
+        if let Ok(aoes) = response.json::<Vec<AoeModel>>().await {
+            Ok(aoes)
+        } else {
+            Err("调用策略API获取策略失败".to_string())
+        }
     } else {
-        Err("调用策略API获取策略失败".to_string())
+        Err("连接PLCC失败".to_string())
     }
 }
 
@@ -187,15 +216,18 @@ async fn save_aoes(token: String, aoes: Vec<AoeModel>) -> Result<(), String> {
     let url = format!("{PLCC_HOST}/{URL_AOES}");
     let headers = get_header(token);
     let client = Client::new();
-    let response = client
+    if let Ok(response) = client
         .post(&url)
         .headers(headers)
         .json(&aoes)
-        .send().await.unwrap();
-    if response.status() == StatusCode::OK {
-        Ok(())
+        .send().await {
+        if response.status() == StatusCode::OK {
+            Ok(())
+        } else {
+            Err("调用策略API新增策略失败".to_string())
+        }
     } else {
-        Err("调用策略API新增策略失败".to_string())
+        Err("连接PLCC失败".to_string())
     }
 }
 
@@ -203,29 +235,32 @@ async fn login() -> Result<String, String> {
     let login_url = format!("{PLCC_HOST}/{URL_LOGIN}");
     let body = json!((PLCC_USR, password_v_encode(PLCC_PWD.to_string())));
     let client = Client::new();
-    let response = client
+    if let Ok(response) = client
         .post(&login_url)
         .json(&body)
-        .send().await.unwrap();
-    let (token, user_id, _user_name) = response.json::<(String, u16, String)>().await.unwrap();
-    if user_id == 0 {
-        let error = match token.as_str() {
-            "password_error" => {
-                "密码错误".to_string()
-            },
-            "login_count_exceeded" => {
-                "密码连续错误超过5次，请5分钟后再试".to_string()
-            },
-            "user_expired" => {
-                "此用户账号已过期".to_string()
-            },
-            _ => {
-                "未知错误".to_string()
-            }
-        };
-        Err(error)
+        .send().await {
+        let (token, user_id, _user_name) = response.json::<(String, u16, String)>().await.unwrap();
+        if user_id == 0 {
+            let error = match token.as_str() {
+                "password_error" => {
+                    "密码错误".to_string()
+                },
+                "login_count_exceeded" => {
+                    "密码连续错误超过5次，请5分钟后再试".to_string()
+                },
+                "user_expired" => {
+                    "此用户账号已过期".to_string()
+                },
+                _ => {
+                    "未知错误".to_string()
+                }
+            };
+            Err(error)
+        } else {
+            Ok(token)
+        }
     } else {
-        Ok(token)
+        Err("连接PLCC失败".to_string())
     }
 }
 
@@ -243,6 +278,24 @@ fn get_header(token: String) -> HeaderMap {
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     headers.insert(HEADER_TOKEN, HeaderValue::from_str(&token).unwrap());
     headers
+}
+
+async fn reset(token: String) -> Result<(), String> {
+    let url = format!("{PLCC_HOST}/{URL_RESET}");
+    let headers = get_header(token);
+    let client = Client::new();
+    if let Ok(response) = client
+        .post(&url)
+        .headers(headers)
+        .send().await {
+        if response.status() == StatusCode::OK {
+            Ok(())
+        } else {
+            Err("调用重置API失败".to_string())
+        }
+    } else {
+        Err("连接PLCC失败".to_string())
+    }
 }
 
 pub async fn aoe_result_upload() -> Result<(), String> {
@@ -313,13 +366,16 @@ async fn query_aoe_result(token: String) -> Result<PbAoeResults, String> {
     let url = format!("{PLCC_HOST}/{URL_AOE_RESULTS}?last_only=true");
     let headers = get_header(token);
     let client = Client::new();
-    let response = client
+    if let Ok(response) = client
         .get(&url)
         .headers(headers)
-        .send().await.unwrap();
-    if let Ok(aoe_results) = response.json::<PbAoeResults>().await {
-        Ok(aoe_results)
+        .send().await {
+        if let Ok(aoe_results) = response.json::<PbAoeResults>().await {
+            Ok(aoe_results)
+        } else {
+            Err("调用策略执行结果API获取测点失败".to_string())
+        }
     } else {
-        Err("调用策略执行结果API获取测点失败".to_string())
+        Err("连接PLCC失败".to_string())
     }
 }

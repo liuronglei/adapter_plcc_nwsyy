@@ -10,7 +10,7 @@ use crate::db::mydb;
 use crate::{JSON_DATA_PATH, FILE_NAME_POINTS, FILE_NAME_TRANSPORTS, FILE_NAME_AOES};
 use crate::model::north::MyTransports;
 use crate::model::{ParserResult, points_to_south, transports_to_south, aoes_to_south};
-use crate::utils::plccapi::{update_points, update_transports, update_aoes};
+use crate::utils::plccapi::{update_points, update_transports, update_aoes, do_reset};
 use crate::utils::mqttclient::do_query_dev;
 use crate::db::dbutils::*;
 use crate::utils::{param_point_map, point_param_map};
@@ -78,6 +78,13 @@ impl ParserManager {
                     }
                 }
                 match self.parse_aoes(file_name_aoes, &points_mapping, current_id).await {
+                    Ok(()) => {},
+                    Err(err) => {
+                        result.result = false;
+                        result.err = err;
+                    }
+                }
+                match do_reset().await {
                     Ok(()) => {},
                     Err(err) => {
                         result.result = false;

@@ -64,27 +64,41 @@ pub fn points_to_south(points: MyPoints) -> Result<(Vec<Measurement>, Vec<(Strin
 }
 
 pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<String, u64>, dev_guids: &HashMap<String, String>) -> Result<(Vec<Transport>, u64), String> {
-    let mut transports_result = vec![];
+    let new_transport = MyMqttTransportJoin::from_vec(transports.transports)?;
+
+    // 遥测遥信
+    let mut filter_keys = vec![];
+    let mut filter_values = vec![];
+    let mut filter_keys_cx = vec![];
+    let mut json_tags = HashMap::new();
+    let mut point_ycyx_index = 0;
+    let mut point_ycyx_ids = vec![];
+
+    // 遥调
+    let mut point_yt_ids = vec![];
+    let mut json_write_template_yt = HashMap::new();
+    let mut json_write_tag_yt = HashMap::new();
+    
+    // 遥控
+    let mut point_yk_ids = vec![];
+    let mut json_write_template_yk = HashMap::new();
+    let mut json_write_tag_yk = HashMap::new();
+
     let mut current_tid = 65536_u64;
-    for t in transports.transports {
-        let dev_id = t.dev_id();
-        if !dev_guids.contains_key(&dev_id) {
+    for (dev_id, (point_ycyx, point_yt, point_yk)) in new_transport.dev_ids_map.iter() {
+        if !dev_guids.contains_key(dev_id) {
             return Err(format!("找不到设备GUID：{dev_id}"));
         }
-        let dev_guid = dev_guids.get(&dev_id).unwrap();
-        let point_ycyx = t.point_ycyx_ids();
-        let point_ycyx_ids = point_ycyx.iter()
+        let dev_guid = dev_guids.get(dev_id).unwrap();
+        let points = point_ycyx.iter()
             .filter(|v|points_mapping.contains_key(*v))
             .map(|v| (*points_mapping.get(v).unwrap(), false)).collect::<Vec<(u64, bool)>>();
-        let mut json_tags = HashMap::new();
-        let mut filter_keys = vec![];
-        let mut filter_values = vec![];
-        let mut filter_keys_cx = vec![];
-        for (i, v) in point_ycyx.iter().enumerate() {
+        point_ycyx_ids.extend(points);
+        for v in point_ycyx.iter() {
             if points_mapping.contains_key(v) {
                 let mut value_map = HashMap::with_capacity(1);
-                value_map.insert("val".to_string(), i);
-                json_tags.insert(format!("[{i}]"), value_map);
+                value_map.insert("val".to_string(), point_ycyx_index);
+                json_tags.insert(format!("[{point_ycyx_index}]"), value_map);
                 if let Some(tag) = get_north_tag(v) {
                     filter_keys.push(vec![
                         "body/_array/name".to_string(),
@@ -102,163 +116,163 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
                     ]);
                 }
             }
+            point_ycyx_index = point_ycyx_index + 1;
         }
-        // 遥测遥信通道
-        current_tid = current_tid + 1;
-        let ycyx_mt1 = MqttTransport {
-            id: current_tid,
-            name: format!("{}_实时数据写", t.name()),
-            mqtt_broker: t.mqtt_broker(),
-            point_id: 0_u64,
-            point_ids: point_ycyx_ids.clone(),
-            read_topic: "/svc.dbc/+/S-dataservice/F-SetRealData".to_string(),
-            write_topic: "".to_string(),
-            is_json: true,
-            is_transfer: false,
-            keep_alive: None,
-            user_name: None,
-            user_password: None,
-            array_filter: None,
-            filter_keys: Some(filter_keys.clone()),
-            filter_values: Some(filter_values.clone()),
-            json_tags: Some(json_tags.clone()),
-            json_write_template: None,
-            json_write_tag: None,
-        };
-        current_tid = current_tid + 1;
-        let ycyx_mt2 = MqttTransport {
-            id: current_tid,
-            name: format!("{}_实时数据更新通知", t.name()),
-            mqtt_broker: t.mqtt_broker(),
-            point_id: 0_u64,
-            point_ids: point_ycyx_ids.clone(),
-            read_topic: "/svc.brd/+/S-dataservice/F-UpdateRealData".to_string(),
-            write_topic: "".to_string(),
-            is_json: true,
-            is_transfer: false,
-            keep_alive: None,
-            user_name: None,
-            user_password: None,
-            array_filter: None,
-            filter_keys: Some(filter_keys),
-            filter_values: Some(filter_values.clone()),
-            json_tags: Some(json_tags.clone()),
-            json_write_template: None,
-            json_write_tag: None,
-        };
-        current_tid = current_tid + 1;
-        let ycyx_mt3 = MqttTransport {
-            id: current_tid,
-            name: format!("{}_实时数据查询", t.name()),
-            mqtt_broker: t.mqtt_broker(),
-            point_id: 0_u64,
-            point_ids: point_ycyx_ids,
-            read_topic: format!("/svc.dbc/{APP_NAME}/S-dataservice/F-GetRealData"),
-            write_topic: "".to_string(),
-            is_json: true,
-            is_transfer: false,
-            keep_alive: None,
-            user_name: None,
-            user_password: None,
-            array_filter: None,
-            filter_keys: Some(filter_keys_cx),
-            filter_values: Some(filter_values),
-            json_tags: Some(json_tags),
-            json_write_template: None,
-            json_write_tag: None,
-        };
-        let point_yt = t.point_yt_ids();
-        let point_yt_ids = point_yt.iter()
+        let points = point_yt.iter()
             .filter(|v|points_mapping.contains_key(*v))
             .map(|v| (*points_mapping.get(v).unwrap(), true)).collect::<Vec<(u64, bool)>>();
-        let mut json_write_template = HashMap::new();
-        let mut json_write_tag = HashMap::new();
+        point_yt_ids.extend(points);
         for v in point_yt.iter() {
             if points_mapping.contains_key(v) {
                 if let Some(tag) = get_north_tag(v) {
                     let pid = *points_mapping.get(v).unwrap();
-                    json_write_template.insert(
+                    json_write_template_yt.insert(
                         pid,
-                        format!("{{\"token\": \"234\",\"timestamp\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"body\": [{{\"name\": \"{tag}\",\"val\": \"\",\"unit\": \"\",\"datatype\": \"\"}}]}}]}}")
+                        format!("{{\"token\": \"plcc_yt\",\"timestamp\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"body\": [{{\"name\": \"{tag}\",\"val\": \"\",\"unit\": \"\",\"datatype\": \"\"}}]}}]}}")
                     );
-                    json_write_tag.insert(
+                    json_write_tag_yt.insert(
                         pid,
                         "body/_array/body/_array/val;timestamp".to_string()
                     );
                 }
             }
         }
-        // 遥调通道
-        current_tid = current_tid + 1;
-        let yt_mt = MqttTransport {
-            id: current_tid,
-            name: format!("{}_定值设置", t.name()),
-            mqtt_broker: t.mqtt_broker(),
-            point_id: 0_u64,
-            point_ids: point_yt_ids,
-            read_topic: "".to_string(),
-            write_topic: format!("/svc.dbc/{APP_NAME}/S-dataservice/F-SetPara"),
-            is_json: true,
-            is_transfer: false,
-            keep_alive: None,
-            user_name: None,
-            user_password: None,
-            array_filter: Some("body".to_string()),
-            filter_keys: None,
-            filter_values: None,
-            json_tags: None,
-            json_write_template: Some(json_write_template),
-            json_write_tag: Some(json_write_tag),
-        };
-        let point_yk = t.point_yk_ids();
-        let point_yk_ids = point_yk.iter()
+        let points = point_yk.iter()
             .filter(|v|points_mapping.contains_key(*v))
             .map(|v| (*points_mapping.get(v).unwrap(), true)).collect::<Vec<(u64, bool)>>();
-        let mut json_write_template = HashMap::new();
-        let mut json_write_tag = HashMap::new();
+        point_yk_ids.extend(points);
         for v in point_yk.iter() {
             if points_mapping.contains_key(v) {
                 if let Some(tag) = get_north_tag(v) {
                     let pid = *points_mapping.get(v).unwrap();
-                    json_write_template.insert(
+                    json_write_template_yk.insert(
                         pid,
-                        format!("{{\"token\": \"123\",\"time\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"name\": \"{tag}\",\"type\": \"SCO\",\"cmd\": \"0\",\"action\": \"1\",\"mode\": \"0\",\"timeout\": \"10\"}}]}}")
+                        format!("{{\"token\": \"plcc_yk\",\"time\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"name\": \"{tag}\",\"type\": \"SCO\",\"cmd\": \"0\",\"action\": \"1\",\"mode\": \"0\",\"timeout\": \"10\"}}]}}")
                     );
-                    json_write_tag.insert(
+                    json_write_tag_yk.insert(
                         pid,
                         "body/_array/body/_array/val;timestamp".to_string()
                     );
                 }
             }
         }
-        // 遥控通道
-        current_tid = current_tid + 1;
-        let yk_mt = MqttTransport {
-            id: current_tid,
-            name: format!("{}_遥控命令转发", t.name()),
-            mqtt_broker: t.mqtt_broker(),
-            point_id: 0_u64,
-            point_ids: point_yk_ids,
-            read_topic: "".to_string(),
-            write_topic: format!("/svc.brd/{APP_NAME}/S-dataservice/F-RemoteCtrl"),
-            is_json: true,
-            is_transfer: false,
-            keep_alive: None,
-            user_name: None,
-            user_password: None,
-            array_filter: Some("body".to_string()),
-            filter_keys: None,
-            filter_values: None,
-            json_tags: None,
-            json_write_template: Some(json_write_template),
-            json_write_tag: Some(json_write_tag),
-        };
-        transports_result.push(Transport::Mqtt(ycyx_mt1));
-        transports_result.push(Transport::Mqtt(ycyx_mt2));
-        transports_result.push(Transport::Mqtt(ycyx_mt3));
-        transports_result.push(Transport::Mqtt(yt_mt));
-        transports_result.push(Transport::Mqtt(yk_mt));
     }
+    
+    // 遥测遥信通道
+    current_tid = current_tid + 1;
+    let ycyx_mt1 = MqttTransport {
+        id: current_tid,
+        name: format!("{}_实时数据写", new_transport.name.clone()),
+        mqtt_broker: new_transport.mqtt_broker.clone(),
+        point_id: 0_u64,
+        point_ids: point_ycyx_ids.clone(),
+        read_topic: "/svc.dbc/+/S-dataservice/F-SetRealData".to_string(),
+        write_topic: "".to_string(),
+        is_json: true,
+        is_transfer: false,
+        keep_alive: None,
+        user_name: None,
+        user_password: None,
+        array_filter: None,
+        filter_keys: Some(filter_keys.clone()),
+        filter_values: Some(filter_values.clone()),
+        json_tags: Some(json_tags.clone()),
+        json_write_template: None,
+        json_write_tag: None,
+    };
+    current_tid = current_tid + 1;
+    let ycyx_mt2 = MqttTransport {
+        id: current_tid,
+        name: format!("{}_实时数据更新通知", new_transport.name.clone()),
+        mqtt_broker: new_transport.mqtt_broker.clone(),
+        point_id: 0_u64,
+        point_ids: point_ycyx_ids.clone(),
+        read_topic: "/svc.brd/+/S-dataservice/F-UpdateRealData".to_string(),
+        write_topic: "".to_string(),
+        is_json: true,
+        is_transfer: false,
+        keep_alive: None,
+        user_name: None,
+        user_password: None,
+        array_filter: None,
+        filter_keys: Some(filter_keys),
+        filter_values: Some(filter_values.clone()),
+        json_tags: Some(json_tags.clone()),
+        json_write_template: None,
+        json_write_tag: None,
+    };
+    current_tid = current_tid + 1;
+    let ycyx_mt3 = MqttTransport {
+        id: current_tid,
+        name: format!("{}_实时数据查询", new_transport.name.clone()),
+        mqtt_broker: new_transport.mqtt_broker.clone(),
+        point_id: 0_u64,
+        point_ids: point_ycyx_ids,
+        read_topic: format!("/svc.dbc/{APP_NAME}/S-dataservice/F-GetRealData"),
+        write_topic: "".to_string(),
+        is_json: true,
+        is_transfer: false,
+        keep_alive: None,
+        user_name: None,
+        user_password: None,
+        array_filter: None,
+        filter_keys: Some(filter_keys_cx),
+        filter_values: Some(filter_values),
+        json_tags: Some(json_tags),
+        json_write_template: None,
+        json_write_tag: None,
+    };
+    // 遥调通道
+    current_tid = current_tid + 1;
+    let yt_mt = MqttTransport {
+        id: current_tid,
+        name: format!("{}_定值设置", new_transport.name.clone()),
+        mqtt_broker: new_transport.mqtt_broker.clone(),
+        point_id: 0_u64,
+        point_ids: point_yt_ids,
+        read_topic: "".to_string(),
+        write_topic: format!("/svc.dbc/{APP_NAME}/S-dataservice/F-SetPara"),
+        is_json: true,
+        is_transfer: false,
+        keep_alive: None,
+        user_name: None,
+        user_password: None,
+        array_filter: Some("body".to_string()),
+        filter_keys: None,
+        filter_values: None,
+        json_tags: None,
+        json_write_template: Some(json_write_template_yt),
+        json_write_tag: Some(json_write_tag_yt),
+    };
+    // 遥控通道
+    current_tid = current_tid + 1;
+    let yk_mt = MqttTransport {
+        id: current_tid,
+        name: format!("{}_遥控命令转发", new_transport.name.clone()),
+        mqtt_broker: new_transport.mqtt_broker.clone(),
+        point_id: 0_u64,
+        point_ids: point_yk_ids,
+        read_topic: "".to_string(),
+        write_topic: format!("/svc.brd/{APP_NAME}/S-dataservice/F-RemoteCtrl"),
+        is_json: true,
+        is_transfer: false,
+        keep_alive: None,
+        user_name: None,
+        user_password: None,
+        array_filter: Some("body".to_string()),
+        filter_keys: None,
+        filter_values: None,
+        json_tags: None,
+        json_write_template: Some(json_write_template_yk),
+        json_write_tag: Some(json_write_tag_yk),
+    };
+    let mut transports_result = vec![];
+    transports_result.push(Transport::Mqtt(ycyx_mt1));
+    transports_result.push(Transport::Mqtt(ycyx_mt2));
+    transports_result.push(Transport::Mqtt(ycyx_mt3));
+    transports_result.push(Transport::Mqtt(yt_mt));
+    transports_result.push(Transport::Mqtt(yk_mt));
+
     Ok((transports_result, current_tid))
 }
 

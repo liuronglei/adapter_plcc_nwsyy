@@ -22,6 +22,52 @@ pub struct MyMqttTransport {
     pub point_yk_ids: Vec<String>,
 }
 
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct MyMqttTransportJoin {
+    /// 设备id及对应的测点
+    pub dev_ids_map: HashMap<String, (Vec<String>, Vec<String>, Vec<String>)>,
+    /// 通道名称
+    pub name: String,
+    /// 服务端的ip和port
+    pub mqtt_broker: (String, u16),
+}
+
+impl MyMqttTransportJoin {
+    pub fn from_vec(transports: Vec<MyTransport>) -> Result<Self, String> {
+        if transports.is_empty() {
+            return Err("通道为空".to_string());
+        }
+        let mut name = "".to_string();
+        let mut mqtt_broker = ("localhost".to_string(), 1883);
+        let mut dev_ids_map = HashMap::new();
+        for transport in transports {
+            match transport {
+                MyTransport::Mqtt(mqtt_transport) => {
+                    if name.is_empty() {
+                        name = mqtt_transport.name.clone();
+                    }
+                    if mqtt_broker.0.is_empty() {
+                        mqtt_broker = mqtt_transport.mqtt_broker.clone();
+                    }
+                    dev_ids_map.insert(
+                        mqtt_transport.dev_id,
+                        (
+                            mqtt_transport.point_ycyx_ids,
+                            mqtt_transport.point_yt_ids,
+                            mqtt_transport.point_yk_ids,
+                        ),
+                    );
+                },
+            }
+        }
+        Ok(Self {
+            dev_ids_map,
+            name,
+            mqtt_broker,
+        })
+    }
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum MyTransport {
     Mqtt(MyMqttTransport),

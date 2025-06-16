@@ -15,6 +15,7 @@ pub const URL_POINTS: &str = "api/v1/points/models";
 pub const URL_TRANSPORTS: &str = "api/v1/transports/models";
 pub const URL_AOES: &str = "api/v1/aoes/models";
 pub const URL_AOE_RESULTS: &str = "api/v1/aoe_results";
+pub const URL_RESET: &str = "api/v1/controls/reset";
 pub const MQTT_HOST: &str = "localhost";
 pub const MQTT_PORT: u16 = 1883;
 pub const HTTP_PORT: u16 = 8088;
