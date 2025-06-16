@@ -32,7 +32,7 @@ pub async fn do_query_dev(name: &str, host: &str, port: u16, dev_ids: Vec<String
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     // mqttoptions.set_credentials("username", "password");
     let topic_request_query_dev = format!("/ext.syy.subota/{APP_NAME}/S-otaservice/F-GetNodeInfo");
-    let topic_response_query_dev = format!("{APP_NAME}/ext.syy.subota//S-otaservice/F-GetNodeInfo");
+    let topic_response_query_dev = format!("{APP_NAME}/ext.syy.subota/S-otaservice/F-GetNodeInfo");
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
     // 订阅查询消息返回
     client_subscribe(&client, &topic_response_query_dev).await?;
@@ -140,11 +140,13 @@ pub async fn do_register_and_query(name: &str, host: &str, port: u16) -> Result<
         },
     }
     log::info!("注册流程结束");
+    println!("注册流程结束");
     let topic_request_query = format!("/svc.dbc/{APP_NAME}/S-dataservice/F-GetRealData");
     // 发布数据查询消息
     let payload = serde_json::to_string(&generate_query_data()).unwrap();
     client_publish(&client, &topic_request_query, &payload).await?;
     log::info!("数据查询流程结束");
+    println!("数据查询流程结束");
     Ok(())
 }
 
