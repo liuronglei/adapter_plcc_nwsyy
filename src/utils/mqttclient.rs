@@ -32,7 +32,7 @@ pub async fn do_query_dev(name: &str, host: &str, port: u16, dev_ids: Vec<String
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     // mqttoptions.set_credentials("username", "password");
     let topic_request_query_dev = format!("/ext.syy.subota/{APP_NAME}/S-otaservice/F-GetNodeInfo");
-    let topic_response_query_dev = format!("{APP_NAME}/ext.syy.subota/S-otaservice/F-GetNodeInfo");
+    let topic_response_query_dev = format!("/{APP_NAME}/ext.syy.subota/S-otaservice/F-GetNodeInfo");
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
     // 订阅查询消息返回
     client_subscribe(&client, &topic_response_query_dev).await?;
