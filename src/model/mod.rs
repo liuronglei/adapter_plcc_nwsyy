@@ -128,11 +128,11 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
                     let pid = *points_mapping.get(v).unwrap();
                     json_write_template_yt.insert(
                         pid,
-                        format!("{{\"token\": \"plcc_yt\",\"timestamp\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"body\": [{{\"name\": \"{tag}\",\"val\": \"\",\"unit\": \"\",\"datatype\": \"\"}}]}}]}}")
+                        format!("{{\"token\": \"plcc_yt\",\"time\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"body\": [{{\"name\": \"{tag}\",\"val\": \"\",\"unit\": \"\",\"datatype\": \"\"}}]}}]}}")
                     );
                     json_write_tag_yt.insert(
                         pid,
-                        "body/_array/body/_array/val;timestamp".to_string()
+                        "body/_array/body/_array/val;time".to_string()
                     );
                 }
             }
@@ -151,7 +151,7 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
                     );
                     json_write_tag_yk.insert(
                         pid,
-                        "body/_array/body/_array/val;timestamp".to_string()
+                        "body/_array/cmd;time".to_string()
                     );
                 }
             }
@@ -208,7 +208,7 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
         mqtt_broker: new_transport.mqtt_broker.clone(),
         point_id: 0_u64,
         point_ids: point_ycyx_ids,
-        read_topic: format!("/svc.dbc/{APP_NAME}/S-dataservice/F-GetRealData"),
+        read_topic: format!("/{APP_NAME}/svc.dbc/S-dataservice/F-GetRealData"),
         write_topic: "".to_string(),
         is_json: true,
         is_transfer: false,
