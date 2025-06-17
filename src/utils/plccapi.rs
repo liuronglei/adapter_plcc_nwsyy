@@ -13,7 +13,7 @@ use crate::model::north::{MyPbAoeResult, MyPbActionResult};
 use crate::utils::mqttclient::{client_publish, generate_aoe_result};
 use crate::utils::point_param_map;
 use crate::{URL_LOGIN, URL_POINTS, URL_TRANSPORTS,
-    URL_AOES, URL_AOE_RESULTS, URL_RESET, APP_NAME};
+    URL_AOES, URL_AOE_RESULTS, URL_RESET, ADAPTER_NAME};
 use crate::env::Env;
 
 const PASSWORD_V_KEY: &[u8] = b"zju-plcc";
@@ -57,7 +57,7 @@ pub async fn do_reset() -> Result<(), String> {
 }
 
 async fn delete_points(token: String, ids: Vec<u64>) -> Result<(), String> {
-    let env = Env::get_env(APP_NAME);
+    let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let url = format!("{plcc_server}/{URL_POINTS}");
     let headers = get_header(token);
@@ -78,7 +78,7 @@ async fn delete_points(token: String, ids: Vec<u64>) -> Result<(), String> {
 }
 
 async fn query_points(token: String) -> Result<Vec<Measurement>, String> {
-    let env = Env::get_env(APP_NAME);
+    let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let url = format!("{plcc_server}/{URL_POINTS}");
     let headers = get_header(token);
@@ -98,7 +98,7 @@ async fn query_points(token: String) -> Result<Vec<Measurement>, String> {
 }
 
 async fn save_points(token: String, points: Vec<Measurement>) -> Result<(), String> {
-    let env = Env::get_env(APP_NAME);
+    let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let url = format!("{plcc_server}/{URL_POINTS}");
     let headers = get_header(token);
@@ -119,7 +119,7 @@ async fn save_points(token: String, points: Vec<Measurement>) -> Result<(), Stri
 }
 
 async fn delete_transports(token: String, ids: Vec<u64>) -> Result<(), String> {
-    let env = Env::get_env(APP_NAME);
+    let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let ids = ids.iter()
         .map(|n| n.to_string())
@@ -144,7 +144,7 @@ async fn delete_transports(token: String, ids: Vec<u64>) -> Result<(), String> {
 }
 
 async fn query_transports(token: String) -> Result<Vec<Transport>, String> {
-    let env = Env::get_env(APP_NAME);
+    let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let url = format!("{plcc_server}/{URL_TRANSPORTS}");
     let headers = get_header(token);
@@ -164,7 +164,7 @@ async fn query_transports(token: String) -> Result<Vec<Transport>, String> {
 }
 
 async fn save_transports(token: String, transports: Vec<Transport>) -> Result<(), String> {
-    let env = Env::get_env(APP_NAME);
+    let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let url = format!("{plcc_server}/{URL_TRANSPORTS}");
     let headers = get_header(token);
@@ -185,7 +185,7 @@ async fn save_transports(token: String, transports: Vec<Transport>) -> Result<()
 }
 
 async fn delete_aoes(token: String, ids: Vec<u64>) -> Result<(), String> {
-    let env = Env::get_env(APP_NAME);
+    let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let ids = ids.iter()
         .map(|n| n.to_string())
@@ -210,7 +210,7 @@ async fn delete_aoes(token: String, ids: Vec<u64>) -> Result<(), String> {
 }
 
 async fn query_aoes(token: String) -> Result<Vec<AoeModel>, String> {
-    let env = Env::get_env(APP_NAME);
+    let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let url = format!("{plcc_server}/{URL_AOES}");
     let headers = get_header(token);
@@ -230,7 +230,7 @@ async fn query_aoes(token: String) -> Result<Vec<AoeModel>, String> {
 }
 
 async fn save_aoes(token: String, aoes: Vec<AoeModel>) -> Result<(), String> {
-    let env = Env::get_env(APP_NAME);
+    let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let url = format!("{plcc_server}/{URL_AOES}");
     let headers = get_header(token);
@@ -251,7 +251,7 @@ async fn save_aoes(token: String, aoes: Vec<AoeModel>) -> Result<(), String> {
 }
 
 async fn login() -> Result<String, String> {
-    let env = Env::get_env(APP_NAME);
+    let env = Env::get_env(ADAPTER_NAME);
     let plcc_user = env.get_plcc_user();
     let plcc_pwd = env.get_plcc_pwd();
     let plcc_server = env.get_plcc_server();
@@ -304,7 +304,7 @@ fn get_header(token: String) -> HeaderMap {
 }
 
 async fn reset(token: String) -> Result<(), String> {
-    let env = Env::get_env(APP_NAME);
+    let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let url = format!("{plcc_server}/{URL_RESET}");
     let headers = get_header(token);
@@ -333,9 +333,10 @@ pub async fn aoe_result_upload() -> Result<(), String> {
 }
 
 async fn aoe_upload_loop() -> Result<(), String> {
-    let env = Env::get_env(APP_NAME);
+    let env = Env::get_env(ADAPTER_NAME);
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
+    let app_name = env.get_app_name();
 
     let mut ticker = interval(Duration::from_secs(5));
     let mut count = 0;
@@ -345,7 +346,7 @@ async fn aoe_upload_loop() -> Result<(), String> {
     let mut mqttoptions = rumqttc::MqttOptions::new("plcc_aoe_result", &mqtt_server, mqtt_server_port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     // mqttoptions.set_credentials("username", "password");
-    let topic_request_upload = format!("/sys.brd/{APP_NAME}/S-dataservice/F-UpdateSOE");
+    let topic_request_upload = format!("/sys.brd/{app_name}/S-dataservice/F-UpdateSOE");
     let (client, e) = rumqttc::AsyncClient::new(mqttoptions, 10);
     loop {
         if count >= 86400 {
@@ -389,7 +390,7 @@ async fn aoe_upload_loop() -> Result<(), String> {
 }
 
 async fn query_aoe_result(token: String) -> Result<PbAoeResults, String> {
-    let env = Env::get_env(APP_NAME);
+    let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let url = format!("{plcc_server}/{URL_AOE_RESULTS}?last_only=true");
     let headers = get_header(token);

@@ -4,15 +4,15 @@ use actix_cors::Cors;
 use actix_web::{App, HttpServer, web};
 use actix_web::middleware::Compress;
 use actix_web::web::Data;
-use crate::APP_NAME;
+use crate::ADAPTER_NAME;
 use crate::parser::{start_parser_service, config_parser_web_service};
 use crate::utils::mqttclient::{do_register, do_data_query};
 use crate::utils::plccapi::aoe_result_upload;
 use crate::env::Env;
 
 pub async fn run_adapter() -> std::io::Result<()> {
-    Env::init(APP_NAME);
-    let env = Env::get_env(APP_NAME);
+    Env::init(ADAPTER_NAME);
+    let env = Env::get_env(ADAPTER_NAME);
     let http_server_port = env.get_http_server_port();
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();

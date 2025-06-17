@@ -14,10 +14,12 @@ pub const PLCC_USER: &str = "plccUser";
 pub const PLCC_PWD: &str = "plccPwd";
 pub const MQTT_SERVER: &str = "mqttServer";
 pub const HTTP_SERVER_PORT: &str = "httpServerPort";
+pub const MQTT_TIMEOUT: &str = "mqttTimeout";
 pub const POINT_FILE_DIR: &str = "pointFileDir";
 pub const TRANSPORT_DIR: &str = "transportFileDir";
 pub const AOE_DIR: &str = "aoeFileDir";
 pub const JSON_DIR: &str = "jsonFileDir";
+pub const APP_NAME: &str = "appName";
 
 pub const BEE_ID: &str = "beeId";
 
@@ -33,41 +35,13 @@ pub const EXE_ROOT_DIR: &str = "exeRootDir";
 pub const WEB_DIR: &str = "webFileDir";
 pub const DB_DIR: &str = "dbFileDir";
 pub const LOG_DIR: &str = "LogDir";
-pub const DOCKERS_CONFIG_DIR: &str = "dockersConfigDir";
-pub const FRONT_ZIP_FILE: &str = "frontZipFile";
-// store plugins and scripts files
-pub const FRONT_FILE_DIR: &str = "frontFileDir";
-pub const DOCKERS_FRONT_FILE_DIR: &str = "dockersFrontFileDir";
 
 // 开启SSL证书
 pub const IS_USE_SSL: &str = "isUseSsl";
 pub const SSL_CERT_FILE_PATH: &str = "sslCertFilePath";
 pub const SSL_KEY_FILE_PATH: &str = "sslKeyFilePath";
 
-pub const EIG_NAME: &str = "eigName";
 pub const EIG_DESC: &str = "eigDesc";
-// 用于plcc配置ems地址
-pub const EIG_PROXY_ADDR: &str = "eigProxyAddress";
-pub const EIG_RT_MSG_PROXY_ADDR: &str = "eigRtMsgProxyAddress";
-pub const EIG_IPINFO1: &str = "eigIpInfo1";
-pub const EIG_IPINFO2: &str = "eigIpInfo2";
-pub const EIG_IPINFO3: &str = "eigIpInfo3";
-pub const EIG_IPINFO4: &str = "eigIpInfo4";
-pub const EIG_IPINFO5: &str = "eigIpInfo5";
-pub const EIG_IPINFO6: &str = "eigIpInfo6";
-pub const EIG_IPINFO7: &str = "eigIpInfo7";
-pub const EIG_IPINFO8: &str = "eigIpInfo8";
-pub const EIG_IPINFO9: &str = "eigIpInfo9";
-pub const EIG_IPINFO10: &str = "eigIpInfo10";
-pub const CLOUD_URL1: &str = "cloudURL1";
-pub const CLOUD_URL2: &str = "cloudURL2";
-pub const CLOUD_URL3: &str = "cloudURL3";
-pub const CLOUD_URL4: &str = "cloudURL4";
-pub const CLOUD_URL5: &str = "cloudURL5";
-pub const CLOUD_URL6: &str = "cloudURL6";
-pub const CLOUD_CA1: &str = "cloudCA1";
-pub const CLOUD_CA2: &str = "cloudCA2";
-pub const CLOUD_CA3: &str = "cloudCA3";
 // short message service url
 
 pub const MQTT_PACKAGE_MAX_SIZE: &str = "mqttPackageMaxSize";
@@ -85,47 +59,17 @@ pub const LOG_LEVEL: &str = "logLevel";
 pub const LOG_SAVE_TIME: &str = "logSaveTime";
 pub const LOG_SAVE_SIZE: &str = "logSaveSize";
 pub const LOG_HIS_FILE_NUM: &str = "logHisFileNum";
-// Listen Port
-// ems与ems之间连接的端口
-pub const EMS_LISTEN_PORT: &str = "emsListenPort";
-pub const EMS_RTMSG_LISTEN_PORT: &str = "emsRtMsgListenPort";
-// 镜像与ems或plcc连接的端口
-// ems与plcc连接的端口
-pub const LCC_LISTEN_PORT: &str = "lccListenPort";
-pub const LCC_RTMSG_LISTEN_PORT: &str = "lccRtMsgListenPort";
-// const UDP_BROADCAST_PORT: &str = "udpBroadcastPort";
-// const UDP_LISTEN_PORT: &str = "udpListenPort";
-
-// used for standby-active mechanism
-pub const STANDBY_LCC_IP: &str = "standbyLccIp";
-pub const STANDBY_LCC_BEEID: &str = "standbyLccId";
-
-pub const MEAS_SOURRE_NUM: &str = "measSourceNum";
 
 pub const DATABASE_URL: &str = "databaseUrl";
-pub const WASI_FS_ROOT: &str = "wasiFileRoot";
-
-// finder related properties
-pub const FINDER_UDP_LISTEN_PORT: &str = "finderUdpListenPort";
-pub const FINDER_UDP_BROADCAST_PORT: &str = "finderUdpBroadcastPort";
-pub const FINDER_SLEEP_MILLI_BEFORE_RECONNECT: &str = "finderSleepMilliBeforeReconnect";
-pub const FINDER_SERIAL_PATH: &str = "eigSerialPath";
-pub const FINDER_SERIAL_BAUD: &str = "finderSerialBaud";
 
 
-const CONFIG_ARGS: [&str; 77] = [CONF_PATH, BEE_ID, MQTT_SERVER, MQTT_AUTH, HTTP_SERVER_PORT,
+const CONFIG_ARGS: [&str; 40] = [CONF_PATH, BEE_ID, MQTT_SERVER, MQTT_AUTH, HTTP_SERVER_PORT,
     MQTT_CLIENT_BUF_SIZE, MQTT_MV_LIMIT, SOCKET_BUF_SIZE_NORTH, SOCKET_BUF_SIZE_SOUTH, EXE_ROOT_DIR,
-    POINT_FILE_DIR, TRANSPORT_DIR, JSON_DIR, AOE_DIR, WEB_DIR, DB_DIR, LOG_DIR, DOCKERS_CONFIG_DIR,
-    FRONT_ZIP_FILE, FRONT_FILE_DIR,DOCKERS_FRONT_FILE_DIR,
-    EIG_NAME, EIG_DESC, EIG_PROXY_ADDR, EIG_RT_MSG_PROXY_ADDR, EIG_IPINFO1, EIG_IPINFO2,
-    EIG_IPINFO3, EIG_IPINFO4, EIG_IPINFO5, EIG_IPINFO6, EIG_IPINFO7, EIG_IPINFO8, EIG_IPINFO9, EIG_IPINFO10,
-    CLOUD_URL1, CLOUD_URL2, CLOUD_URL3, CLOUD_URL4, CLOUD_URL5, CLOUD_URL6, CLOUD_CA1, CLOUD_CA2,
-    CLOUD_CA3, MQTT_PACKAGE_MAX_SIZE, IS_LOCAL_FRONTEND, IS_DB, IS_HIS_DB, IS_FAKE_DELETE,
+    POINT_FILE_DIR, TRANSPORT_DIR, JSON_DIR, AOE_DIR, WEB_DIR, DB_DIR, LOG_DIR,
+    APP_NAME, EIG_DESC, MQTT_PACKAGE_MAX_SIZE, IS_LOCAL_FRONTEND, IS_DB, IS_HIS_DB, IS_FAKE_DELETE,
     DB_DIR_SIZE_LIMIT, IS_LOCAL_MQTT, LOCAL_MQTT_PORT, LOG_LEVEL, LOG_SAVE_TIME, LOG_SAVE_SIZE,
-    LOG_HIS_FILE_NUM, EMS_LISTEN_PORT, EMS_RTMSG_LISTEN_PORT, LCC_LISTEN_PORT, LCC_RTMSG_LISTEN_PORT,
-    STANDBY_LCC_IP, STANDBY_LCC_BEEID, MEAS_SOURRE_NUM, DATABASE_URL, WASI_FS_ROOT, PLCC_SERVER,
-    PLCC_USER, PLCC_PWD, EIG_HOME, IS_USE_SSL, SSL_CERT_FILE_PATH, SSL_KEY_FILE_PATH,
-    FINDER_SERIAL_PATH, FINDER_SERIAL_BAUD, FINDER_UDP_LISTEN_PORT, FINDER_UDP_BROADCAST_PORT, FINDER_SLEEP_MILLI_BEFORE_RECONNECT];
+    LOG_HIS_FILE_NUM, MQTT_TIMEOUT, DATABASE_URL, PLCC_SERVER,
+    PLCC_USER, PLCC_PWD, EIG_HOME, IS_USE_SSL, SSL_CERT_FILE_PATH, SSL_KEY_FILE_PATH];
 
 pub const PING_GET: u8 = 1;
 pub const CONFIG_GET: u8 = 2;
@@ -154,38 +98,14 @@ impl Env {
         Env::default()
     }
 
-    pub fn get_eig_name(&self) -> String {
-        let eig_name = self.properties.get(EIG_NAME).unwrap();
-        eig_name.clone()
+    pub fn get_app_name(&self) -> String {
+        let app_name = self.properties.get(APP_NAME).unwrap();
+        app_name.clone()
     }
 
     pub fn get_eig_desc(&self) -> String {
         let eig_desc = self.properties.get(EIG_DESC).unwrap();
         eig_desc.clone()
-    }
-
-    pub fn get_finder_serial_path(&self) -> String {
-        self.properties.get(FINDER_SERIAL_PATH).unwrap().clone()
-    }
-
-    pub fn get_finder_serial_baud(&self) -> u32 {
-        let r = self.properties.get(FINDER_SERIAL_BAUD).unwrap().clone();
-        r.parse().unwrap()
-    }
-
-    pub fn get_finder_udp_listen_port(&self) -> u16 {
-        let r = self.properties.get(FINDER_UDP_LISTEN_PORT).unwrap().clone();
-        r.parse().unwrap()
-    }
-
-    pub fn get_finder_udp_broadcast_port(&self) -> u16 {
-        let r = self.properties.get(FINDER_UDP_BROADCAST_PORT).unwrap().clone();
-        r.parse().unwrap()
-    }
-
-    pub fn get_finder_sleep_milli_before_reconnect(&self) -> u64 {
-        let r = self.properties.get(FINDER_SLEEP_MILLI_BEFORE_RECONNECT).unwrap().clone();
-        r.parse().unwrap()
     }
 
     pub fn get_mqtt_server(&self) -> String {
@@ -293,34 +213,6 @@ impl Env {
         self.transform_path_to_absolute(path.as_str())
     }
 
-    pub fn get_front_zip_file(&self) -> String {
-        let path = self.properties.get(FRONT_ZIP_FILE).unwrap().to_owned();
-        self.transform_path_to_absolute(path.as_str())
-    }
-
-    pub fn get_front_dir(&self) -> String {
-        let path = self.properties.get(FRONT_FILE_DIR).unwrap().to_owned();
-        let path = self.transform_path_to_absolute(path.as_str());
-        if !PathBuf::from(path.as_str()).exists() {
-            error!("front file dir not exists: {}", path.as_str());
-            std::fs::create_dir_all(path.as_str()).unwrap_or_else(|e| {
-                error!("create front file dir error: {}", e);
-            });
-        }
-        path
-    }
-
-    pub fn get_docker_front_dir(&self) -> String {
-        let path = self.properties.get(DOCKERS_FRONT_FILE_DIR).unwrap().to_owned();
-        if !PathBuf::from(path.as_str()).exists() {
-            error!("front file dir not exists: {}", path.as_str());
-            std::fs::create_dir_all(path.as_str()).unwrap_or_else(|e| {
-                error!("create front file dir error: {}", e);
-            });
-        }
-        self.transform_path_to_absolute(path.as_str())
-    }
-
     pub fn get_db_dir(&self) -> String {
         let path = self.properties.get(DB_DIR).unwrap().to_owned();
         self.transform_path_to_absolute(path.as_str())
@@ -328,11 +220,6 @@ impl Env {
 
     pub fn get_log_dir(&self) -> String {
         let path = self.properties.get(LOG_DIR).unwrap().to_owned();
-        self.transform_path_to_absolute(path.as_str())
-    }
-
-    pub fn get_dockers_config_dir(&self) -> String {
-        let path = self.properties.get(DOCKERS_CONFIG_DIR).unwrap().to_owned();
         self.transform_path_to_absolute(path.as_str())
     }
 
@@ -389,24 +276,6 @@ impl Env {
         }
     }
 
-    pub fn get_proxy_addr(&self) -> String {
-        if let Some(s) = self.get_property(EIG_PROXY_ADDR) {
-            // if !s.is_empty() && is_valid_address(s) {
-            return s.to_string();
-            // }
-        }
-        String::new()
-    }
-
-    pub fn get_rt_msg_proxy_addr(&self) -> String {
-        if let Some(s) = self.get_property(EIG_RT_MSG_PROXY_ADDR) {
-            //if !s.is_empty() && is_valid_address(s) {
-            return s.to_string();
-            //}
-        }
-        String::new()
-    }
-
     pub fn get_is_use_ssl(&self) -> bool {
         let r = self.properties.get(IS_USE_SSL);
         match r {
@@ -429,46 +298,9 @@ impl Env {
         String::new()
     }
 
-    pub fn get_measure_source_num(&self) -> u32 {
-        let s = self.properties.get(MEAS_SOURRE_NUM).unwrap();
+    pub fn get_mqtt_timeout(&self) -> u64 {
+        let s = self.properties.get(MQTT_TIMEOUT).unwrap();
         s.trim().parse().unwrap()
-    }
-
-    // pub fn get_udp_broadcast_port(&self) -> u16 {
-    //     let s = self.properties.get(UDP_BROADCAST_PORT).unwrap();
-    //     s.trim().parse().unwrap()
-    // }
-
-    // pub fn get_udp_listen_port(&self) -> u16 {
-    //     let s = self.properties.get(UDP_LISTEN_PORT).unwrap();
-    //     s.trim().parse().unwrap()
-    // }
-
-    pub fn get_ems_listen_port(&self) -> u16 {
-        let s = self.properties.get(EMS_LISTEN_PORT).unwrap();
-        s.trim().parse().unwrap()
-    }
-
-    pub fn get_ems_rtmsg_listen_port(&self) -> u16 {
-        let s = self.properties.get(EMS_RTMSG_LISTEN_PORT).unwrap();
-        s.trim().parse().unwrap()
-    }
-
-    pub fn get_lcc_listen_port(&self) -> u16 {
-        let s = self.properties.get(LCC_LISTEN_PORT).unwrap();
-        s.trim().parse().unwrap()
-    }
-
-    pub fn get_lcc_rtmsg_listen_port(&self) -> u16 {
-        let s = self.properties.get(LCC_RTMSG_LISTEN_PORT).unwrap();
-        s.trim().parse().unwrap()
-    }
-
-    pub fn get_standby_lcc_ip(&self) -> String {
-        self.properties.get(STANDBY_LCC_IP).unwrap_or(&String::new()).clone()
-    }
-    pub fn get_standby_lcc_beeid(&self) -> String {
-        self.properties.get(STANDBY_LCC_BEEID).unwrap_or(&String::new()).clone()
     }
 
     pub fn get_properties(&self) -> HashMap<String, String> {
@@ -501,74 +333,46 @@ impl Env {
         self.properties.get(PLCC_PWD).unwrap_or(&String::new()).clone()
     }
 
-    pub fn get_wasi_fs_root(&self) -> String {
-        self.properties.get(WASI_FS_ROOT).unwrap_or(&String::from(".")).clone()
-    }
-
     pub fn get_default_properties() -> HashMap<String, String> {
         let mut properties: HashMap<String, String> = HashMap::with_capacity(16);
 
         let default_props = HashMap::from([
+            (HTTP_SERVER_PORT, "80"),
+            (POINT_FILE_DIR, "points.json"),
+            (TRANSPORT_DIR, "transports.json"),
+            (AOE_DIR, "aoes.json"),
+            (JSON_DIR, "file"),
             (MQTT_SERVER, "localhost:1883"),
+            (IS_LOCAL_MQTT, "false"),
+            (LOCAL_MQTT_PORT, "1883"),
+            (MQTT_TIMEOUT, "30"),
+
+            (MQTT_MV_LIMIT, "1000"),
             (MQTT_AUTH, ""),
             (MQTT_CLIENT_BUF_SIZE, "100"),
             (MQTT_PACKAGE_MAX_SIZE, "2 MiB"),
-            (IS_LOCAL_MQTT, "false"),
-            (LOCAL_MQTT_PORT, "1883"),
-            (MQTT_MV_LIMIT, "1000"),
-            (HTTP_SERVER_PORT, "80"),
             (SOCKET_BUF_SIZE_NORTH, "128 MiB"),//128MB
             (SOCKET_BUF_SIZE_SOUTH, "32 MiB"),//32MB
-
-            (MEAS_SOURRE_NUM, "0"),
             // default dirs
             // (EXE_ROOT_DIR, "./"),
             (EIG_HOME, ""),
-            (POINT_FILE_DIR, "points"),
-            (TRANSPORT_DIR, "transports"),
-            (AOE_DIR, "aoes"),
-            (JSON_DIR, "svgs"),
             (WEB_DIR, "www"),
             (DB_DIR, "db"),
             (LOG_DIR, "log"),
-            // (CONF_PATH, "config"),
-            // (CONF_X_PATH, "config-x"),
-            (DOCKERS_CONFIG_DIR, "dockers/configs"),
-            (FRONT_ZIP_FILE, "www.zip"),
-            (FRONT_FILE_DIR, "resources"),
-            (DOCKERS_FRONT_FILE_DIR, "dockers/resources"),
 
             // default eig config
-            (EIG_NAME, ""),
+            (APP_NAME, "ext.syy.plcc"),
             (EIG_DESC, ""),
             (IS_LOCAL_FRONTEND, "true"),
             (IS_DB, "true"),
             (IS_HIS_DB, "true"),
             (IS_FAKE_DELETE, "false"),
             (DB_DIR_SIZE_LIMIT, "1 GB"),
-            (EIG_PROXY_ADDR, ""),
-            (EIG_RT_MSG_PROXY_ADDR, ""),
             //default LogConfig
             (LOG_LEVEL, "info"),
             (LOG_SAVE_TIME, ""),//日志初始化时会初始化为1 day
             (LOG_SAVE_SIZE, ""),
             (LOG_HIS_FILE_NUM, "7"),
-            // Listen Port
-            // (UDP_BROADCAST_PORT, "7054"),
-            // (UDP_LISTEN_PORT, "7055"),
-            (LCC_LISTEN_PORT, "7056"),
-            (LCC_RTMSG_LISTEN_PORT, "7057"),
-            (EMS_LISTEN_PORT, "7058"),
-            (EMS_RTMSG_LISTEN_PORT, "7059"),
-            // standby setting
-            (STANDBY_LCC_IP, ""),
-            (STANDBY_LCC_BEEID, ""),
-            (WASI_FS_ROOT, "."),
-            (FINDER_SERIAL_PATH, ""),
-            (FINDER_SERIAL_BAUD, "115200"),
-            (FINDER_UDP_LISTEN_PORT, "7054"),
-            (FINDER_UDP_BROADCAST_PORT, "7055"),
-            (FINDER_SLEEP_MILLI_BEFORE_RECONNECT, "5000"),
         ]);
 
         default_props.iter().for_each(|(k, v)| {
@@ -587,7 +391,7 @@ impl Env {
 
     fn init_with_path(config_path: &str) -> Env {
         //生成默认env
-        let mut env = Env {
+        let env = Env {
             properties: Env::get_default_properties(),
         };
         let mut env_new = env.clone();
@@ -609,7 +413,7 @@ impl Env {
         exe_path.parent().unwrap().display().to_string()
     }
 
-    fn init_with_args(app_name: &str) -> Env {
+    fn init_with_args(_app_name: &str) -> Env {
         // 从参数或环境变量中加载config路径
         let config_path = Self::get_exe_root()+"/adapter";
         Env::init_with_path(&config_path)

@@ -12,7 +12,8 @@ use south::{DataUnit, Expr};
 use crate::model::north::*;
 use crate::model::south::*;
 use crate::utils::{get_north_tag, replace_point, get_point_tag};
-use crate::APP_NAME;
+use crate::ADAPTER_NAME;
+use crate::env::Env;
 
 pub mod north;
 pub mod south;
@@ -64,7 +65,10 @@ pub fn points_to_south(points: MyPoints) -> Result<(Vec<Measurement>, Vec<(Strin
 }
 
 pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<String, u64>, dev_guids: &HashMap<String, String>) -> Result<(Vec<Transport>, u64), String> {
+    let env = Env::get_env(ADAPTER_NAME);
+    let mqtt_broker = (env.get_mqtt_server(), env.get_mqtt_server_port());
     let new_transport = MyMqttTransportJoin::from_vec(transports.transports)?;
+    let app_name = env.get_app_name();
 
     // 遥测遥信
     let mut filter_keys = vec![];
@@ -163,7 +167,7 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
     let ycyx_mt1 = MqttTransport {
         id: current_tid,
         name: format!("{}_实时数据写", new_transport.name.clone()),
-        mqtt_broker: new_transport.mqtt_broker.clone(),
+        mqtt_broker: mqtt_broker.clone(),
         point_id: 0_u64,
         point_ids: point_ycyx_ids.clone(),
         read_topic: "/svc.dbc/+/S-dataservice/F-SetRealData".to_string(),
@@ -184,7 +188,7 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
     let ycyx_mt2 = MqttTransport {
         id: current_tid,
         name: format!("{}_实时数据更新通知", new_transport.name.clone()),
-        mqtt_broker: new_transport.mqtt_broker.clone(),
+        mqtt_broker: mqtt_broker.clone(),
         point_id: 0_u64,
         point_ids: point_ycyx_ids.clone(),
         read_topic: "/svc.brd/+/S-dataservice/F-UpdateRealData".to_string(),
@@ -205,10 +209,10 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
     let ycyx_mt3 = MqttTransport {
         id: current_tid,
         name: format!("{}_实时数据查询", new_transport.name.clone()),
-        mqtt_broker: new_transport.mqtt_broker.clone(),
+        mqtt_broker: mqtt_broker.clone(),
         point_id: 0_u64,
         point_ids: point_ycyx_ids,
-        read_topic: format!("/{APP_NAME}/svc.dbc/S-dataservice/F-GetRealData"),
+        read_topic: format!("/{app_name}/svc.dbc/S-dataservice/F-GetRealData"),
         write_topic: "".to_string(),
         is_json: true,
         is_transfer: false,
@@ -227,11 +231,11 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
     let yt_mt = MqttTransport {
         id: current_tid,
         name: format!("{}_定值设置", new_transport.name.clone()),
-        mqtt_broker: new_transport.mqtt_broker.clone(),
+        mqtt_broker: mqtt_broker.clone(),
         point_id: 0_u64,
         point_ids: point_yt_ids,
         read_topic: "".to_string(),
-        write_topic: format!("/svc.dbc/{APP_NAME}/S-dataservice/F-SetPara"),
+        write_topic: format!("/svc.dbc/{app_name}/S-dataservice/F-SetPara"),
         is_json: true,
         is_transfer: false,
         keep_alive: None,
@@ -249,11 +253,11 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
     let yk_mt = MqttTransport {
         id: current_tid,
         name: format!("{}_遥控命令转发", new_transport.name.clone()),
-        mqtt_broker: new_transport.mqtt_broker.clone(),
+        mqtt_broker: mqtt_broker.clone(),
         point_id: 0_u64,
         point_ids: point_yk_ids,
         read_topic: "".to_string(),
-        write_topic: format!("/svc.brd/{APP_NAME}/S-dataservice/F-RemoteCtrl"),
+        write_topic: format!("/svc.brd/{app_name}/S-dataservice/F-RemoteCtrl"),
         is_json: true,
         is_transfer: false,
         keep_alive: None,

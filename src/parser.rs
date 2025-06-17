@@ -1,14 +1,13 @@
-use actix_web::{post, get, HttpResponse, web};
+use actix_web::{get, HttpResponse, web};
 use async_channel::{bounded, Sender};
 use log::{info, warn};
 use rocksdb::DB;
 use std::fs::File;
 use std::io::BufReader;
 use std::collections::HashMap;
-use std::thread::sleep;
 
 use crate::db::mydb;
-use crate::APP_NAME;
+use crate::ADAPTER_NAME;
 use crate::model::north::MyTransports;
 use crate::model::{ParserResult, points_to_south, transports_to_south, aoes_to_south};
 use crate::utils::plccapi::{update_points, update_transports, update_aoes, do_reset};
@@ -55,7 +54,7 @@ impl ParserManager {
     }
 
     async fn do_operation(&self, op: ParserOperation) {
-        let env = Env::get_env(APP_NAME);
+        let env = Env::get_env(ADAPTER_NAME);
         let json_dir = env.get_json_dir();
         let point_dir = env.get_point_dir();
         let transport_dir = env.get_transport_dir();
@@ -128,10 +127,10 @@ impl ParserManager {
                     warn!("!!Failed to send update json : {e:?}");
                 }
             }
-            ParserOperation::GetPointMapping(sender) => {
+            ParserOperation::GetPointMapping(_sender) => {
                 
             }
-            ParserOperation::GetDevMapping(sender) => {
+            ParserOperation::GetDevMapping(_sender) => {
                 
             }
             ParserOperation::Quit => {}
@@ -225,7 +224,7 @@ pub fn start_parser_service(parser_db_dir: String) -> Sender<ParserOperation> {
     // 启动解析服务
     let (op_sender, op_receiver) = bounded(OPERATION_RECEIVE_BUFF_NUM);
     tokio::spawn(async move {
-        if let Some(mut db) = ParserManager::new(&parser_db_dir) {
+        if let Some(db) = ParserManager::new(&parser_db_dir) {
             loop {
                 match op_receiver.recv().await {
                     Ok(op) => {
@@ -294,7 +293,7 @@ pub fn config_parser_web_service(cfg: &mut web::ServiceConfig) {
 }
 
 async fn query_dev_guid(transports: &MyTransports) -> Result<HashMap<String, String>, String> {
-    let env = Env::get_env(APP_NAME);
+    let env = Env::get_env(ADAPTER_NAME);
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
     if transports.transports.is_empty() {

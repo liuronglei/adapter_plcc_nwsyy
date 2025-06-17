@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 use rumqttc::{AsyncClient, Event, Incoming, MqttOptions, QoS};
-use tokio::time::Duration;
+use tokio::time::{timeout, Duration};
 use tokio::sync::oneshot;
 use chrono::Local;
 
 use crate::model::north::MyPbAoeResult;
-use crate::APP_NAME;
+use crate::ADAPTER_NAME;
 use crate::model::datacenter::{DataQuery, DataQueryBody, QueryDev, QueryDevResponse, Register, RegisterBody, RegisterResponse};
 use crate::model::datacenter::{AoeResult, AoeResultBody};
+use crate::env::Env;
 
 pub async fn client_subscribe(client: &AsyncClient, topic: &str) -> Result<(), String> {
     match client.subscribe(topic, QoS::AtMostOnce).await {
@@ -28,11 +29,14 @@ pub async fn client_publish(client: &AsyncClient, topic: &str, payload: &str) ->
 }
 
 pub async fn do_query_dev(name: &str, host: &str, port: u16, dev_ids: Vec<String>) -> Result<HashMap<String, String>, String> {
+    let env = Env::get_env(ADAPTER_NAME);
+    let mqtt_timeout = env.get_mqtt_timeout();
+    let app_name = env.get_app_name();
     let mut mqttoptions = MqttOptions::new(name, host, port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     // mqttoptions.set_credentials("username", "password");
-    let topic_request_query_dev = format!("/ext.syy.subota/{APP_NAME}/S-otaservice/F-GetNodeInfo");
-    let topic_response_query_dev = format!("/{APP_NAME}/ext.syy.subota/S-otaservice/F-GetNodeInfo");
+    let topic_request_query_dev = format!("/ext.syy.subota/{app_name}/S-otaservice/F-GetNodeInfo");
+    let topic_response_query_dev = format!("/{app_name}/ext.syy.subota/S-otaservice/F-GetNodeInfo");
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
     // 订阅查询消息返回
     client_subscribe(&client, &topic_response_query_dev).await?;
@@ -74,18 +78,22 @@ pub async fn do_query_dev(name: &str, host: &str, port: u16, dev_ids: Vec<String
             }
         }
     });
-    match rx.await {
-        Ok(result) => result,
-        Err(_) => Err("查询设备GUID，等待响应失败".to_string()),
+    match timeout(Duration::from_secs(mqtt_timeout), rx).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(_)) => Err("查询设备GUID，等待响应失败".to_string()),
+        Err(_) => Err("查询设备GUID超时，未收到MQTT响应".to_string()),
     }
 }
 
 pub async fn do_register(name: &str, host: &str, port: u16) -> Result<(), String> {
+    let env = Env::get_env(ADAPTER_NAME);
+    let mqtt_timeout = env.get_mqtt_timeout();
+    let app_name = env.get_app_name();
     let mut mqttoptions = MqttOptions::new(name, host, port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     // mqttoptions.set_credentials("username", "password");
-    let topic_request_register = format!("/svc.dbc/{APP_NAME}/S-dataservice/F-Register");
-    let topic_response_register = format!("/{APP_NAME}/svc.dbc/S-dataservice/F-Register");
+    let topic_request_register = format!("/svc.dbc/{app_name}/S-dataservice/F-Register");
+    let topic_response_register = format!("/{app_name}/svc.dbc/S-dataservice/F-Register");
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
     // 订阅注册消息返回
     client_subscribe(&client, &topic_response_register).await?;
@@ -122,32 +130,31 @@ pub async fn do_register(name: &str, host: &str, port: u16) -> Result<(), String
             }
         }
     });
-    match rx.await {
-        Ok(result) => {
+    match timeout(Duration::from_secs(mqtt_timeout), rx).await {
+        Ok(Ok(result)) => {
             match result {
                 Ok(b) => {
                     if !b {
                         return Err("注册APP失败，响应结果为false".to_string());
                     }
-                },
-                Err(e) => {
-                    return Err(e);
-                },
+                }
+                Err(e) => return Err(e),
             }
-        },
-        Err(_) => {
-            return Err("注册APP，等待响应失败".to_string());
-        },
+        }
+        Ok(Err(_)) => return Err("注册APP，等待响应失败".to_string()),
+        Err(_) => return Err("注册APP超时，未收到MQTT响应".to_string()),
     }
     Ok(())
 }
 
 pub async fn do_data_query(name: &str, host: &str, port: u16) -> Result<(), String> {
+    let env = Env::get_env(ADAPTER_NAME);
+    let app_name = env.get_app_name();
     let mut mqttoptions = MqttOptions::new(name, host, port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     // mqttoptions.set_credentials("username", "password");
     let (client, e) = AsyncClient::new(mqttoptions, 10);
-    let topic_request_query = format!("/svc.dbc/{APP_NAME}/S-dataservice/F-GetRealData");
+    let topic_request_query = format!("/svc.dbc/{app_name}/S-dataservice/F-GetRealData");
     let payload = serde_json::to_string(&generate_query_data()).unwrap();
     client_publish(&client, &topic_request_query, &payload).await?;
     Ok(())

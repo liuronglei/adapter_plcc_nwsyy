@@ -9,6 +9,7 @@ pub struct Register {
     pub body: Vec<RegisterBody>,
 }
 
+#[allow(non_snake_case)]
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct RegisterBody {
     pub model: String,
@@ -59,6 +60,7 @@ pub struct QueryDevResponse {
     pub devices: Vec<QueryDevResponseBody>,
 }
 
+#[allow(non_snake_case)]
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct QueryDevResponseBody {
     pub devID: String,

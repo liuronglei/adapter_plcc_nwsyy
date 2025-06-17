@@ -12,8 +12,6 @@ pub struct MyMqttTransport {
     pub dev_id: String,
     /// 通道名称
     pub name: String,
-    /// 服务端的ip和port
-    pub mqtt_broker: (String, u16),
     /// 遥测/遥信的测点
     pub point_ycyx_ids: Vec<String>,
     /// 遥调的测点
@@ -28,8 +26,6 @@ pub struct MyMqttTransportJoin {
     pub dev_ids_map: HashMap<String, (Vec<String>, Vec<String>, Vec<String>)>,
     /// 通道名称
     pub name: String,
-    /// 服务端的ip和port
-    pub mqtt_broker: (String, u16),
 }
 
 impl MyMqttTransportJoin {
@@ -38,16 +34,12 @@ impl MyMqttTransportJoin {
             return Err("通道为空".to_string());
         }
         let mut name = "".to_string();
-        let mut mqtt_broker = ("localhost".to_string(), 1883);
         let mut dev_ids_map = HashMap::new();
         for transport in transports {
             match transport {
                 MyTransport::Mqtt(mqtt_transport) => {
                     if name.is_empty() {
                         name = mqtt_transport.name.clone();
-                    }
-                    if mqtt_broker.0.is_empty() {
-                        mqtt_broker = mqtt_transport.mqtt_broker.clone();
                     }
                     dev_ids_map.insert(
                         mqtt_transport.dev_id,
@@ -63,7 +55,6 @@ impl MyMqttTransportJoin {
         Ok(Self {
             dev_ids_map,
             name,
-            mqtt_broker,
         })
     }
 }
@@ -234,11 +225,6 @@ impl MyTransport {
     pub fn name(&self) -> String {
         match self {
             MyTransport::Mqtt(t) => t.name.clone(),
-        }
-    }
-    pub fn mqtt_broker(&self) -> (String, u16) {
-        match self {
-            MyTransport::Mqtt(t) => t.mqtt_broker.clone(),
         }
     }
     pub fn point_ycyx_ids(&self) -> Vec<String> {
