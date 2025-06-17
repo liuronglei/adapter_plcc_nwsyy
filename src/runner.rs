@@ -6,7 +6,7 @@ use actix_web::middleware::Compress;
 use actix_web::web::Data;
 use crate::ADAPTER_NAME;
 use crate::parser::{start_parser_service, config_parser_web_service};
-use crate::utils::mqttclient::{do_register, do_data_query};
+use crate::utils::mqttclient::{do_register, do_data_query, do_keep_alive};
 use crate::utils::plccapi::aoe_result_upload;
 use crate::env::Env;
 
@@ -45,6 +45,15 @@ pub async fn run_adapter() -> std::io::Result<()> {
         },
     }
     println!("AOE结果监听流程结束");
+    println!("进入保活监听流程");
+    match do_keep_alive().await {
+        Ok(_) => {},
+        Err(err) => {
+            log::error!("{err}");
+            println!("{err}");
+        },
+    }
+    println!("保活监听流程结束");
     println!("开始启动API服务");
     let parser_sender = start_parser_service(data_path.to_string());
     let cloned_parser_sender = Data::new(parser_sender.clone());

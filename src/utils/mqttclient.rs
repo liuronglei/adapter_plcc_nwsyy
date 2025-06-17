@@ -6,7 +6,7 @@ use chrono::Local;
 
 use crate::model::north::MyPbAoeResult;
 use crate::ADAPTER_NAME;
-use crate::model::datacenter::{DataQuery, DataQueryBody, QueryDev, QueryDevResponse, Register, RegisterBody, RegisterResponse};
+use crate::model::datacenter::{DataQuery, DataQueryBody, KeepAliveRequest, KeepAliveResponse, QueryDev, QueryDevResponse, Register, RegisterBody, RegisterResponse};
 use crate::model::datacenter::{AoeResult, AoeResultBody};
 use crate::env::Env;
 
@@ -160,6 +160,49 @@ pub async fn do_data_query(name: &str, host: &str, port: u16) -> Result<(), Stri
     Ok(())
 }
 
+pub async fn do_keep_alive() -> Result<(), String> {
+    tokio::spawn(async {
+        if let Err(e) = keep_alive().await {
+            log::error!("保活监听任务失败：{}", e);
+        }
+    });
+    Ok(())
+}
+
+pub async fn keep_alive() -> Result<(), String> {
+    let env = Env::get_env(ADAPTER_NAME);
+    let app_name = env.get_app_name();
+    let mqtt_server = env.get_mqtt_server();
+    let mqtt_server_port = env.get_mqtt_server_port();
+    let mut mqttoptions = MqttOptions::new("plcc_keep_alive", &mqtt_server, mqtt_server_port);
+    mqttoptions.set_keep_alive(Duration::from_secs(5));
+    // mqttoptions.set_credentials("username", "password");
+    let topic_request = format!("/sys.appman/{app_name}/S-appmanager/F-KeepAlive");
+    let topic_response = format!("/{app_name}/sys.appman/S-appmanager/F-KeepAlive");
+    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
+    // 订阅保活主题
+    client_subscribe(&client, &topic_response).await?;
+    tokio::spawn(async move {
+        loop {
+            let event = eventloop.poll().await;
+            match event {
+                Ok(Event::Incoming(Incoming::Publish(p))) => {
+                    if let Ok(msg) = serde_json::from_slice::<KeepAliveRequest>(&p.payload) {
+                        let response = serde_json::to_string(&generate_keep_alive_response(msg)).unwrap();
+                        let _ = client_publish(&client, &topic_request, &response).await;
+                    };
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("发生错误: {:?}", e);
+                    break;
+                }
+            }
+        }
+    });
+    Ok(())
+}
+
 fn generate_register() -> Register {
     let body = RegisterBody {
         model: "ADC".to_string(),
@@ -226,5 +269,14 @@ pub fn generate_aoe_result(aoe_result: Vec<MyPbAoeResult>) -> AoeResult {
         token: format!("aoe_result_{time}"),
         time: generate_current_time(),
         body: vec![body],
+    }
+}
+
+fn generate_keep_alive_response(request: KeepAliveRequest) -> KeepAliveResponse {
+    KeepAliveResponse {
+        token: request.token,
+        time: request.time,
+        ack: "true".to_string(),
+        errmsg: "success".to_string(),
     }
 }

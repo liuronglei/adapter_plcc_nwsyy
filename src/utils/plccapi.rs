@@ -355,7 +355,9 @@ async fn aoe_upload_loop() -> Result<(), String> {
         }
         count += 1;
         ticker.tick().await;
-        let aoe_results = query_aoe_result(token.clone()).await?;
+        let my_aoes = query_aoes(token.clone()).await?;
+        let aids = my_aoes.iter().map(|v| v.id).collect::<Vec<u64>>();
+        let aoe_results = query_aoe_result(token.clone(), aids).await?;
         let points_mapping = point_param_map::get_all();
         let my_aoe_result = aoe_results.results.iter()
             .filter(|a| {
@@ -389,22 +391,31 @@ async fn aoe_upload_loop() -> Result<(), String> {
     }
 }
 
-async fn query_aoe_result(token: String) -> Result<PbAoeResults, String> {
+async fn query_aoe_result(token: String, ids: Vec<u64>) -> Result<PbAoeResults, String> {
     let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
-    let url = format!("{plcc_server}/{URL_AOE_RESULTS}?last_only=true");
+    let ids = ids.iter()
+        .map(|n| n.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let url = format!("{plcc_server}/{URL_AOE_RESULTS}?id={ids}&date={today}&last_only=true");
     let headers = get_header(token);
     let client = Client::new();
-    if let Ok(response) = client
+    match client
         .get(&url)
         .headers(headers)
         .send().await {
-        if let Ok(aoe_results) = response.json::<PbAoeResults>().await {
-            Ok(aoe_results)
-        } else {
-            Err("调用策略执行结果API获取测点失败".to_string())
+        Ok(response) => {
+            if let Ok(aoe_results) = response.json::<PbAoeResults>().await {
+                Ok(aoe_results)
+            } else {
+                Err("调用策略执行结果API获取测点失败".to_string())
+            }
+        },
+        Err(ee) => {
+            println!("连接PLCC失败：{:?}", ee);
+            Err(format!("连接PLCC失败：{:?}", ee))
         }
-    } else {
-        Err("连接PLCC失败".to_string())
     }
 }

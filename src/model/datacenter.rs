@@ -100,3 +100,17 @@ pub struct AoeResultBody {
     pub is_need_rpt: String,
     pub extdata: Vec<MyPbAoeResult>,
 }
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct KeepAliveRequest {
+    pub token: String,
+    pub time: String,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct KeepAliveResponse {
+    pub token: String,
+    pub time: String,
+    pub ack: String,
+    pub errmsg: String,
+}
