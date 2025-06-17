@@ -142,13 +142,14 @@ impl ParserManager {
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
             // 反序列化为对象
-            if let Ok(points) = serde_json::from_reader(reader) {
-                let (new_points, points_mapping) = points_to_south(points)?;
-                let _ = update_points(new_points).await?;
-                self.save_point_mapping(&points_mapping);
-                Ok(points_mapping)
-            } else {
-                Err("测点JSON反序列化失败".to_string())
+            match serde_json::from_reader(reader) {
+                Ok(points) => {
+                    let (new_points, points_mapping) = points_to_south(points)?;
+                    let _ = update_points(new_points).await?;
+                    self.save_point_mapping(&points_mapping);
+                    Ok(points_mapping)
+                },
+                Err(err) => Err(format!("测点JSON反序列化失败：{err}"))
             }
         } else {
             Err("测点JSON文件不存在".to_string())
@@ -160,16 +161,17 @@ impl ParserManager {
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
             // 反序列化为对象
-            if let Ok(transports) = serde_json::from_reader(reader) {
-                println!("开始查询设备guid");
-                let dev_guids = query_dev_guid(&transports).await?;
-                println!("结束查询设备guid");
-                let (new_transports, current_id) = transports_to_south(transports, &points_mapping, &dev_guids)?;
-                let _ = update_transports(new_transports).await?;
-                self.save_dev_mapping(&dev_guids);
-                Ok(current_id)
-            } else {
-                Err("通道JSON反序列化失败".to_string())
+            match serde_json::from_reader(reader) {
+                Ok(transports) => {
+                    println!("开始查询设备guid");
+                    let dev_guids = query_dev_guid(&transports).await?;
+                    println!("结束查询设备guid");
+                    let (new_transports, current_id) = transports_to_south(transports, &points_mapping, &dev_guids)?;
+                    let _ = update_transports(new_transports).await?;
+                    self.save_dev_mapping(&dev_guids);
+                    Ok(current_id)
+                },
+                Err(err) => Err(format!("通道JSON反序列化失败：{err}"))
             }
         } else {
             Err("通道JSON文件不存在".to_string())
@@ -181,12 +183,13 @@ impl ParserManager {
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
             // 反序列化为对象
-            if let Ok(aoes) = serde_json::from_reader(reader) {
-                let new_aoes= aoes_to_south(aoes, &points_mapping, current_id)?;
-                let _ = update_aoes(new_aoes).await?;
-                Ok(())
-            } else {
-                Err("策略JSON反序列化失败".to_string())
+            match serde_json::from_reader(reader) {
+                Ok(aoes) => {
+                    let new_aoes= aoes_to_south(aoes, &points_mapping, current_id)?;
+                    let _ = update_aoes(new_aoes).await?;
+                    Ok(())
+                },
+                Err(err) => Err(format!("策略JSON反序列化失败：{err}"))
             }
         } else {
             Err("策略JSON文件不存在".to_string())

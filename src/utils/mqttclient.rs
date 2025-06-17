@@ -92,8 +92,8 @@ pub async fn do_register(name: &str, host: &str, port: u16) -> Result<(), String
     let mut mqttoptions = MqttOptions::new(name, host, port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     // mqttoptions.set_credentials("username", "password");
-    let topic_request_register = format!("/svc.dbc/{app_name}/S-dataservice/F-Register");
-    let topic_response_register = format!("/{app_name}/svc.dbc/S-dataservice/F-Register");
+    let topic_request_register = format!("/sys.dbc/{app_name}/S-dataservice/F-Register");
+    let topic_response_register = format!("/{app_name}/sys.dbc/S-dataservice/F-Register");
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
     // 订阅注册消息返回
     client_subscribe(&client, &topic_response_register).await?;
@@ -154,7 +154,7 @@ pub async fn do_data_query(name: &str, host: &str, port: u16) -> Result<(), Stri
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     // mqttoptions.set_credentials("username", "password");
     let (client, e) = AsyncClient::new(mqttoptions, 10);
-    let topic_request_query = format!("/svc.dbc/{app_name}/S-dataservice/F-GetRealData");
+    let topic_request_query = format!("/sys.dbc/{app_name}/S-dataservice/F-GetRealData");
     let payload = serde_json::to_string(&generate_query_data()).unwrap();
     client_publish(&client, &topic_request_query, &payload).await?;
     Ok(())
