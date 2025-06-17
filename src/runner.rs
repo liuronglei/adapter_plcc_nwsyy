@@ -18,7 +18,7 @@ pub async fn run_adapter() -> std::io::Result<()> {
     let mqtt_server_port = env.get_mqtt_server_port();
     let data_path = env.get_db_dir();
     // APP注册和数据查询
-    println!("进入注册流程结束");
+    println!("进入注册流程");
     match do_register("plcc_register", &mqtt_server, mqtt_server_port).await {
         Ok(_) => {},
         Err(err) => {

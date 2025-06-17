@@ -611,7 +611,7 @@ impl Env {
 
     fn init_with_args(app_name: &str) -> Env {
         // 从参数或环境变量中加载config路径
-        let config_path = Self::get_exe_root()+"/config";
+        let config_path = Self::get_exe_root()+"/adapter";
         Env::init_with_path(&config_path)
     }
 
