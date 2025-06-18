@@ -231,6 +231,7 @@ pub async fn do_register_app() -> Result<(), String> {
 
 pub async fn do_data_query() -> Result<(), String> {
     tokio::spawn(async {
+        // 等待5秒，避免因为API还没启动或者数据还未写入完成，查询失败
         actix_rt::time::sleep(Duration::from_millis(5000)).await;
         if let Err(e) = data_query().await {
             log::error!("do data_query error: {}", e);
