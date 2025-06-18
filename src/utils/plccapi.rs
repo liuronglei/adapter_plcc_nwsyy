@@ -340,7 +340,7 @@ async fn aoe_upload_loop() -> Result<(), String> {
 
     let mut ticker = interval(Duration::from_secs(5));
     let mut count = 0;
-    let mut token = login().await?;
+    let mut token = "".to_string();
     let mut last_time: HashMap<u64, u64> = HashMap::new();
 
     let mut mqttoptions = rumqttc::MqttOptions::new("plcc_aoe_result", &mqtt_server, mqtt_server_port);
@@ -349,45 +349,57 @@ async fn aoe_upload_loop() -> Result<(), String> {
     let topic_request_upload = format!("/sys.brd/{app_name}/S-dataservice/F-UpdateSOE");
     let (client, e) = rumqttc::AsyncClient::new(mqttoptions, 10);
     loop {
+        ticker.tick().await;
         if count >= 86400 {
-            token = login().await?;
             count = 0;
         }
+        if count == 0 {
+            match login().await {
+                Ok(v) => token = v,
+                Err(_) => continue
+            }
+        }
         count += 1;
-        ticker.tick().await;
-        let my_aoes = query_aoes(token.clone()).await?;
-        let aids = my_aoes.iter().map(|v| v.id).collect::<Vec<u64>>();
-        let aoe_results = query_aoe_result(token.clone(), aids).await?;
-        let points_mapping = point_param_map::get_all();
-        let my_aoe_result = aoe_results.results.iter()
-            .filter(|a| {
-                let aoe_id = a.aoe_id.unwrap();
-                let end_time = a.end_time.unwrap();
-                if let Some(v) = last_time.get(&aoe_id) {
-                    *v != end_time
-                } else {
-                    last_time.insert(aoe_id, end_time);
-                    true
-                }
-            })
-            .map(|a|{
-                let action_results = a.action_results.iter().filter_map(|action_result|{
-                    aoe_action_result_to_north(action_result.clone(), &points_mapping).ok()
-                }).collect::<Vec<MyPbActionResult>>();
-                MyPbAoeResult {
-                    aoe_id: a.aoe_id,
-                    start_time: a.start_time,
-                    end_time: a.end_time,
-                    event_results: a.event_results.clone(),
-                    action_results,
-                }
-            }).collect::<Vec<MyPbAoeResult>>();
-        if !my_aoe_result.is_empty() {
-            let body = generate_aoe_result(my_aoe_result);
-            let payload = serde_json::to_string(&body).unwrap();
-            client_publish(&client, &topic_request_upload, &payload).await?;
+        if let Err(e) = do_aoe_upload(&client, &topic_request_upload, &token, &mut last_time).await {
+            log::error!("do aoe_result_upload error: {}", e);
         }
     }
+}
+
+async fn do_aoe_upload(client: &rumqttc::AsyncClient, topic: &str, token: &str, last_time: &mut HashMap<u64, u64>) -> Result<(), String> {
+    let my_aoes = query_aoes(token.to_string()).await?;
+    let aids = my_aoes.iter().map(|v| v.id).collect::<Vec<u64>>();
+    let aoe_results = query_aoe_result(token.to_string(), aids).await?;
+    let points_mapping = point_param_map::get_all();
+    let my_aoe_result = aoe_results.results.iter()
+        .filter(|a| {
+            let aoe_id = a.aoe_id.unwrap();
+            let end_time = a.end_time.unwrap();
+            if let Some(v) = last_time.get(&aoe_id) {
+                *v != end_time
+            } else {
+                last_time.insert(aoe_id, end_time);
+                true
+            }
+        })
+        .map(|a|{
+            let action_results = a.action_results.iter().filter_map(|action_result|{
+                aoe_action_result_to_north(action_result.clone(), &points_mapping).ok()
+            }).collect::<Vec<MyPbActionResult>>();
+            MyPbAoeResult {
+                aoe_id: a.aoe_id,
+                start_time: a.start_time,
+                end_time: a.end_time,
+                event_results: a.event_results.clone(),
+                action_results,
+            }
+        }).collect::<Vec<MyPbAoeResult>>();
+    if !my_aoe_result.is_empty() {
+        let body = generate_aoe_result(my_aoe_result);
+        let payload = serde_json::to_string(&body).unwrap();
+        client_publish(client, topic, &payload).await?;
+    }
+    Ok(())
 }
 
 async fn query_aoe_result(token: String, ids: Vec<u64>) -> Result<PbAoeResults, String> {

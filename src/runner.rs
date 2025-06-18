@@ -31,12 +31,10 @@ pub async fn run_adapter() -> std::io::Result<()> {
         }
     }
     let http_server_port = env.get_http_server_port();
-    let mqtt_server = env.get_mqtt_server();
-    let mqtt_server_port = env.get_mqtt_server_port();
     let data_path = env.get_db_dir();
     // APP注册和数据查询
     log::info!("start do register mqtt");
-    match do_register("plcc_register", &mqtt_server, mqtt_server_port).await {
+    match do_register().await {
         Ok(_) => {},
         Err(err) => {
             log::error!("do register error: {err}");
@@ -44,7 +42,7 @@ pub async fn run_adapter() -> std::io::Result<()> {
     }
     log::info!("end do register mqtt");
     log::info!("start do data_query mqtt");
-    match do_data_query("plcc_data_query", &mqtt_server, mqtt_server_port).await {
+    match do_data_query().await {
         Ok(_) => {},
         Err(err) => {
             log::error!("do data_query error: {err}");

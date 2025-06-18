@@ -3,15 +3,15 @@ use serde::{Deserialize, Serialize};
 use crate::model::north::MyPbAoeResult;
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
-pub struct Register {
+pub struct RegisterApp {
     pub token: String,
     pub time: String,
-    pub body: Vec<RegisterBody>,
+    pub body: Vec<RegisterAPPBody>,
 }
 
 #[allow(non_snake_case)]
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
-pub struct RegisterBody {
+pub struct RegisterAPPBody {
     pub model: String,
     pub port: String,
     pub addr: String,
@@ -24,6 +24,28 @@ pub struct RegisterBody {
     pub nodeID: String,
     pub productID: String,
 }
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct RegisterModel {
+    pub token: String,
+    pub time: String,
+    pub model: String,
+    pub body: Vec<RegisterModelBody>,
+}
+
+#[allow(non_snake_case)]
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct RegisterModelBody {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub mtype: String,
+    pub unit: String,
+    pub deadzone: String,
+    pub ratio: String,
+    pub isReport: String,
+    pub userdefine: String,
+}
+
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct RegisterResponse {

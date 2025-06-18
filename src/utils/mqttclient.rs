@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use rumqttc::{AsyncClient, Event, Incoming, MqttOptions, QoS};
 use tokio::time::{timeout, Duration};
 use tokio::sync::oneshot;
@@ -6,8 +5,7 @@ use chrono::Local;
 
 use crate::model::north::MyPbAoeResult;
 use crate::ADAPTER_NAME;
-use crate::model::datacenter::{DataQuery, DataQueryBody, KeepAliveRequest, KeepAliveResponse, QueryDev, QueryDevResponse, Register, RegisterBody, RegisterResponse};
-use crate::model::datacenter::{AoeResult, AoeResultBody};
+use crate::model::datacenter::*;
 use crate::env::Env;
 
 pub async fn client_subscribe(client: &AsyncClient, topic: &str) -> Result<(), String> {
@@ -28,11 +26,13 @@ pub async fn client_publish(client: &AsyncClient, topic: &str, payload: &str) ->
     }
 }
 
-pub async fn do_query_dev(name: &str, host: &str, port: u16, dev_ids: Vec<String>) -> Result<HashMap<String, String>, String> {
+pub async fn do_query_dev(dev_ids: Vec<String>) -> Result<Vec<QueryDevResponseBody>, String> {
     let env = Env::get_env(ADAPTER_NAME);
+    let mqtt_server = env.get_mqtt_server();
+    let mqtt_server_port = env.get_mqtt_server_port();
     let mqtt_timeout = env.get_mqtt_timeout();
     let app_name = env.get_app_name();
-    let mut mqttoptions = MqttOptions::new(name, host, port);
+    let mut mqttoptions = MqttOptions::new("plcc_query_dev", &mqtt_server, mqtt_server_port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     // mqttoptions.set_credentials("username", "password");
     let topic_request_query_dev = format!("/ext.syy.subota/{app_name}/S-otaservice/F-GetNodeInfo");
@@ -45,7 +45,7 @@ pub async fn do_query_dev(name: &str, host: &str, port: u16, dev_ids: Vec<String
     let payload = serde_json::to_string(&body).unwrap();
     client_publish(&client, &topic_request_query_dev, &payload).await?;
     // 处理订阅消息
-    let (tx, rx) = oneshot::channel::<Result<HashMap<String, String>, String>>();
+    let (tx, rx) = oneshot::channel::<Result<Vec<QueryDevResponseBody>, String>>();
     tokio::spawn(async move {
         loop {
             let event = eventloop.poll().await;
@@ -54,10 +54,11 @@ pub async fn do_query_dev(name: &str, host: &str, port: u16, dev_ids: Vec<String
                     if p.topic == topic_response_query_dev {
                         let send_result = match serde_json::from_slice::<QueryDevResponse>(&p.payload) {
                             Ok(msg) => {
-                                let mut result = HashMap::new();
+                                let mut result = vec![];
                                 for data in msg.devices {
+                                    let data_clone = data.clone();
                                     if data.status.to_lowercase() == "true".to_string() && data.guid.is_some() {
-                                        result.insert(data.devID, data.guid.unwrap());
+                                        result.push(data_clone);
                                     }
                                 }
                                 tx.send(Ok(result))
@@ -85,11 +86,85 @@ pub async fn do_query_dev(name: &str, host: &str, port: u16, dev_ids: Vec<String
     }
 }
 
-pub async fn do_register(name: &str, host: &str, port: u16) -> Result<(), String> {
+pub async fn do_register() -> Result<(), String> {
+    do_register_model().await?;
+    do_register_app().await?;
+    Ok(())
+}
+
+pub async fn do_register_model() -> Result<(), String> {
     let env = Env::get_env(ADAPTER_NAME);
+    let mqtt_server = env.get_mqtt_server();
+    let mqtt_server_port = env.get_mqtt_server_port();
     let mqtt_timeout = env.get_mqtt_timeout();
     let app_name = env.get_app_name();
-    let mut mqttoptions = MqttOptions::new(name, host, port);
+    let app_model = env.get_app_model();
+    let mut mqttoptions = MqttOptions::new("plcc_model_register", &mqtt_server, mqtt_server_port);
+    mqttoptions.set_keep_alive(Duration::from_secs(5));
+    // mqttoptions.set_credentials("username", "password");
+    let topic_request_register = format!("/sys.dbc/{app_name}/S-dataservice/F-SetModel");
+    let topic_response_register = format!("/{app_name}/sys.dbc/S-dataservice/F-GetModelSchema");
+    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
+    // 订阅注册消息返回
+    client_subscribe(&client, &topic_response_register).await?;
+    // 发布注册消息
+    let body = generate_register_model(app_model);
+    let payload = serde_json::to_string(&body).unwrap();
+    client_publish(&client, &topic_request_register, &payload).await?;
+    // 处理订阅消息
+    let (tx, rx) = oneshot::channel::<Result<bool, String>>();
+    tokio::spawn(async move {
+        loop {
+            let event = eventloop.poll().await;
+            match event {
+                Ok(Event::Incoming(Incoming::Publish(p))) => {
+                    if p.topic == topic_response_register {
+                        let send_result = match serde_json::from_slice::<RegisterResponse>(&p.payload) {
+                            Ok(msg) => {
+                                let result = msg.ack.to_lowercase() == "true".to_string();
+                                tx.send(Ok(result))
+                            }
+                            Err(e) => tx.send(Err(format!("注册model，解析返回字符串失败: {:?}", e))),
+                        };
+                        if send_result.is_err() {
+                            log::error!("do register_model error: receive mqtt massage failed");
+                        }
+                        break;
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    let _ = tx.send(Err(format!("注册model，发生错误: {:?}", e)));
+                    break;
+                }
+            }
+        }
+    });
+    match timeout(Duration::from_secs(mqtt_timeout), rx).await {
+        Ok(Ok(result)) => {
+            match result {
+                Ok(b) => {
+                    if !b {
+                        return Err("注册model失败，响应结果为false".to_string());
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(Err(_)) => return Err("注册model，等待响应失败".to_string()),
+        Err(_) => return Err("注册model超时，未收到MQTT响应".to_string()),
+    }
+    Ok(())
+}
+
+pub async fn do_register_app() -> Result<(), String> {
+    let env = Env::get_env(ADAPTER_NAME);
+    let mqtt_server = env.get_mqtt_server();
+    let mqtt_server_port = env.get_mqtt_server_port();
+    let mqtt_timeout = env.get_mqtt_timeout();
+    let app_name = env.get_app_name();
+    let app_model = env.get_app_model();
+    let mut mqttoptions = MqttOptions::new("plcc_app_register", &mqtt_server, mqtt_server_port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     // mqttoptions.set_credentials("username", "password");
     let topic_request_register = format!("/sys.dbc/{app_name}/S-dataservice/F-Register");
@@ -98,7 +173,7 @@ pub async fn do_register(name: &str, host: &str, port: u16) -> Result<(), String
     // 订阅注册消息返回
     client_subscribe(&client, &topic_response_register).await?;
     // 发布注册消息
-    let body = generate_register();
+    let body = generate_register_app(app_model);
     let payload = serde_json::to_string(&body).unwrap();
     client_publish(&client, &topic_request_register, &payload).await?;
     // 处理订阅消息
@@ -117,7 +192,7 @@ pub async fn do_register(name: &str, host: &str, port: u16) -> Result<(), String
                             Err(e) => tx.send(Err(format!("注册APP，解析返回字符串失败: {:?}", e))),
                         };
                         if send_result.is_err() {
-                            log::error!("do register error: receive mqtt massage failed");
+                            log::error!("do register_app error: receive mqtt massage failed");
                         }
                         break;
                     }
@@ -147,10 +222,12 @@ pub async fn do_register(name: &str, host: &str, port: u16) -> Result<(), String
     Ok(())
 }
 
-pub async fn do_data_query(name: &str, host: &str, port: u16) -> Result<(), String> {
+pub async fn do_data_query() -> Result<(), String> {
     let env = Env::get_env(ADAPTER_NAME);
+    let mqtt_server = env.get_mqtt_server();
+    let mqtt_server_port = env.get_mqtt_server_port();
     let app_name = env.get_app_name();
-    let mut mqttoptions = MqttOptions::new(name, host, port);
+    let mut mqttoptions = MqttOptions::new("plcc_data_query", &mqtt_server, mqtt_server_port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     // mqttoptions.set_credentials("username", "password");
     let (client, e) = AsyncClient::new(mqttoptions, 10);
@@ -203,23 +280,42 @@ pub async fn keep_alive() -> Result<(), String> {
     Ok(())
 }
 
-fn generate_register() -> Register {
-    let body = RegisterBody {
-        model: "ADC".to_string(),
-        port: "1".to_string(),
-        addr: "1".to_string(),
-        desc: "jiaoliucaiji".to_string(),
-        manuID: "1234".to_string(),
-        manuName: "xxx".to_string(),
-        proType: "xxx".to_string(),
-        deviceType: "1234".to_string(),
-        isReport: "0".to_string(),
-        nodeID: "XXXX".to_string(),
-        productID: "XXXX".to_string(),
+fn generate_register_model(model: String) -> RegisterModel {
+    let body = RegisterModelBody {
+        name: "tgPowerCutAlarm".to_string(),
+        mtype: "int".to_string(),
+        unit: "".to_string(),
+        deadzone: "".to_string(),
+        ratio: "".to_string(),
+        isReport: "".to_string(),
+        userdefine: "".to_string(),
     };
     let time = Local::now().timestamp_millis();
-    Register {
-        token: format!("register_{time}"),
+    RegisterModel {
+        token: format!("register_model_{time}"),
+        time: generate_current_time(),
+        model,
+        body: vec![body],
+    }
+}
+
+fn generate_register_app(model: String) -> RegisterApp {
+    let body = RegisterAPPBody {
+        model,
+        port: "".to_string(),
+        addr: "000000".to_string(),
+        desc: "terminal".to_string(),
+        manuID: "".to_string(),
+        manuName: "".to_string(),
+        proType: "".to_string(),
+        deviceType: "".to_string(),
+        isReport: "".to_string(),
+        nodeID: "".to_string(),
+        productID: "".to_string(),
+    };
+    let time = Local::now().timestamp_millis();
+    RegisterApp {
+        token: format!("register_app_{time}"),
         time: generate_current_time(),
         body: vec![body],
     }
@@ -233,7 +329,7 @@ fn generate_current_time() -> String {
 fn generate_query_data() -> DataQuery {
     let time = Local::now().timestamp_millis();
     let body = DataQueryBody {
-        dev: "plcc_1".to_string(),
+        dev: "DC_PLCC".to_string(),
         totalcall: "1".to_string(),
         body: vec![],
     };

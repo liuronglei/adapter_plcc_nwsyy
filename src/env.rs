@@ -21,6 +21,7 @@ pub const TRANSPORT_DIR: &str = "transportFileDir";
 pub const AOE_DIR: &str = "aoeFileDir";
 pub const JSON_DIR: &str = "jsonFileDir";
 pub const APP_NAME: &str = "appName";
+pub const APP_MODEL: &str = "appModel";
 
 pub const BEE_ID: &str = "beeId";
 
@@ -41,8 +42,6 @@ pub const LOG_DIR: &str = "LogDir";
 pub const IS_USE_SSL: &str = "isUseSsl";
 pub const SSL_CERT_FILE_PATH: &str = "sslCertFilePath";
 pub const SSL_KEY_FILE_PATH: &str = "sslKeyFilePath";
-
-pub const EIG_DESC: &str = "eigDesc";
 // short message service url
 
 pub const MQTT_PACKAGE_MAX_SIZE: &str = "mqttPackageMaxSize";
@@ -67,7 +66,7 @@ pub const DATABASE_URL: &str = "databaseUrl";
 const CONFIG_ARGS: [&str; 40] = [CONF_PATH, BEE_ID, MQTT_SERVER, MQTT_AUTH, HTTP_SERVER_PORT,
     MQTT_CLIENT_BUF_SIZE, MQTT_MV_LIMIT, SOCKET_BUF_SIZE_NORTH, SOCKET_BUF_SIZE_SOUTH, EXE_ROOT_DIR,
     POINT_FILE_DIR, TRANSPORT_DIR, JSON_DIR, AOE_DIR, WEB_DIR, DB_DIR, LOG_DIR,
-    APP_NAME, EIG_DESC, MQTT_PACKAGE_MAX_SIZE, IS_LOCAL_FRONTEND, IS_DB, IS_HIS_DB, IS_FAKE_DELETE,
+    APP_NAME, APP_MODEL, MQTT_PACKAGE_MAX_SIZE, IS_LOCAL_FRONTEND, IS_DB, IS_HIS_DB, IS_FAKE_DELETE,
     DB_DIR_SIZE_LIMIT, IS_LOCAL_MQTT, LOCAL_MQTT_PORT, LOG_LEVEL, LOG_SAVE_TIME, LOG_SAVE_SIZE,
     LOG_HIS_FILE_NUM, MQTT_TIMEOUT, DATABASE_URL, PLCC_SERVER,
     PLCC_USER, PLCC_PWD, EIG_HOME, IS_USE_SSL, SSL_CERT_FILE_PATH, SSL_KEY_FILE_PATH];
@@ -104,9 +103,9 @@ impl Env {
         app_name.clone()
     }
 
-    pub fn get_eig_desc(&self) -> String {
-        let eig_desc = self.properties.get(EIG_DESC).unwrap();
-        eig_desc.clone()
+    pub fn get_app_model(&self) -> String {
+        let app_model = self.properties.get(APP_MODEL).unwrap();
+        app_model.clone()
     }
 
     pub fn get_mqtt_server(&self) -> String {
@@ -363,7 +362,7 @@ impl Env {
 
             // default eig config
             (APP_NAME, "ext.syy.plcc"),
-            (EIG_DESC, ""),
+            (APP_MODEL, "DC_PLCC"),
             (IS_LOCAL_FRONTEND, "true"),
             (IS_DB, "true"),
             (IS_HIS_DB, "true"),

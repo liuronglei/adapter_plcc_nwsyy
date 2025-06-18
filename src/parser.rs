@@ -1,4 +1,4 @@
-use actix_web::{get, HttpResponse, web};
+use actix_web::{get, delete, HttpResponse, web};
 use async_channel::{bounded, Sender};
 use log::{info, warn};
 use rocksdb::DB;
@@ -7,6 +7,7 @@ use std::io::BufReader;
 use std::collections::HashMap;
 
 use crate::db::mydb;
+use crate::model::datacenter::QueryDevResponseBody;
 use crate::ADAPTER_NAME;
 use crate::model::north::MyTransports;
 use crate::model::{ParserResult, points_to_south, transports_to_south, aoes_to_south};
@@ -24,7 +25,7 @@ pub const OPERATION_RECEIVE_BUFF_NUM: usize = 100;
 pub enum ParserOperation {
     UpdateJson(Sender<ParserResult>),
     GetPointMapping(Sender<HashMap<u64, String>>),
-    GetDevMapping(Sender<HashMap<String, String>>),
+    GetDevMapping(Sender<Vec<QueryDevResponseBody>>),
     // 退出数据库服务
     Quit,
 }
@@ -58,8 +59,6 @@ impl ParserManager {
         let point_dir = env.get_point_dir();
         let transport_dir = env.get_transport_dir();
         let aoe_dir = env.get_aoe_dir();
-        let mqtt_server = env.get_mqtt_server();
-        let mqtt_server_port = env.get_mqtt_server_port();
         log::info!("start parse JSON file");
         match op {
             ParserOperation::UpdateJson(sender) => {
@@ -111,7 +110,7 @@ impl ParserManager {
                 log::info!("start do query_data mqtt");
                 // 等待2秒
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                match do_data_query("plcc_data_query", &mqtt_server, mqtt_server_port).await {
+                match do_data_query().await {
                     Ok(()) => {},
                     Err(err) => {
                         result.result = false;
@@ -127,10 +126,11 @@ impl ParserManager {
                 }
             }
             ParserOperation::GetPointMapping(_sender) => {
-                
             }
-            ParserOperation::GetDevMapping(_sender) => {
-                
+            ParserOperation::GetDevMapping(sender) => {
+                if let Err(e) = sender.send(self.query_dev_mapping()).await {
+                    warn!("!!Failed to send get dev_mapping : {e:?}");
+                }
             }
             ParserOperation::Quit => {}
         }
@@ -163,11 +163,14 @@ impl ParserManager {
             match serde_json::from_reader(reader) {
                 Ok(transports) => {
                     log::info!("start do dev_guid mqtt");
-                    let dev_guids = query_dev_guid(&transports).await?;
+                    let devs = query_dev(&transports).await?;
+                    let dev_guids = devs.iter().map(|v| {
+                        (v.devID.clone(), v.guid.clone().unwrap_or("".to_string()))
+                    }).collect::<HashMap<String, String>>();
                     log::info!("end do dev_guid mqtt");
                     let (new_transports, current_id) = transports_to_south(transports, &points_mapping, &dev_guids)?;
                     let _ = update_transports(new_transports).await?;
-                    self.save_dev_mapping(&dev_guids);
+                    self.save_dev_mapping(&devs);
                     Ok(current_id)
                 },
                 Err(err) => Err(format!("通道JSON反序列化失败：{err}"))
@@ -209,14 +212,23 @@ impl ParserManager {
         }
     }
 
-    fn save_dev_mapping(&self, dev_guids: &HashMap<String, String>) {
-        let keys: Vec<Vec<u8>> = dev_guids.keys().map(|k| k.as_bytes().to_vec()).collect();
-        let values: Vec<Vec<u8>> = dev_guids.values().map(|v| v.as_bytes().to_vec()).collect();
-        if save_items_to_db_with_tree_name(&self.inner_db, DEV_TREE, &keys, &values) {
-            info!("insert point mapping success");
+    fn query_dev_mapping(&self) -> Vec<QueryDevResponseBody> {
+        query_values_cbor_with_tree_name(&self.inner_db, DEV_TREE)
+    }
+
+    fn save_dev_mapping(&self, devs: &Vec<QueryDevResponseBody>) {
+        if save_items_cbor_to_db_with_tree_name(&self.inner_db, DEV_TREE, &devs, |dev| {
+            dev.devID.as_bytes().to_vec()
+        }) {
+            info!("insert dev_mapping success");
         } else {
-            warn!("!!Failed to insert point mapping");
+            warn!("!!Failed to insert dev_mapping");
         }
+    }
+
+    fn delete_dev_mapping(&self, ids: Vec<String>) -> bool {
+        let keys = ids.iter().map(|id|id.as_bytes().to_vec()).collect::<Vec<Vec<u8>>>();
+        delete_items_by_keys_with_tree_name(&self.inner_db, DEV_TREE, keys)
     }
 
 }
@@ -287,6 +299,19 @@ async fn get_dev_mapping(
     HttpResponse::RequestTimeout().finish()
 }
 
+#[delete("/api/v1/parser/dev_mapping")]
+async fn delete_dev_mapping(
+    sender: web::Data<Sender<ParserOperation>>,
+) -> HttpResponse {
+    let (tx, rx) = bounded(1);
+    if let Ok(()) = sender.send(ParserOperation::GetDevMapping(tx)).await {
+        if let Ok(r) = rx.recv().await {
+            return HttpResponse::Ok().content_type("application/json").json(r);
+        }
+    }
+    HttpResponse::RequestTimeout().finish()
+}
+
 pub fn config_parser_web_service(cfg: &mut web::ServiceConfig) {
     // 开放控制接口
     cfg.service(update_json)
@@ -294,16 +319,10 @@ pub fn config_parser_web_service(cfg: &mut web::ServiceConfig) {
     .service(get_dev_mapping);
 }
 
-async fn query_dev_guid(transports: &MyTransports) -> Result<HashMap<String, String>, String> {
-    let env = Env::get_env(ADAPTER_NAME);
-    let mqtt_server = env.get_mqtt_server();
-    let mqtt_server_port = env.get_mqtt_server_port();
+async fn query_dev(transports: &MyTransports) -> Result<Vec<QueryDevResponseBody>, String> {
     if transports.transports.is_empty() {
         return Err("通道为空".to_string());
     }
     let dev_ids = transports.transports.iter().map(|t|t.dev_id()).collect::<Vec<_>>();
-    do_query_dev("plcc_dev", &mqtt_server, mqtt_server_port, dev_ids).await
-    // let mut a = HashMap::new();
-    // a.insert("dev1".to_string(), "a_guid".to_string());
-    // Ok(a)
+    do_query_dev(dev_ids).await
 }
