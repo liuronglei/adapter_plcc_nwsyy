@@ -326,7 +326,7 @@ async fn reset(token: String) -> Result<(), String> {
 pub async fn aoe_result_upload() -> Result<(), String> {
     tokio::spawn(async {
         if let Err(e) = aoe_upload_loop().await {
-            log::error!("策略结果定时上传任务失败：{}", e);
+            log::error!("do aoe_result_upload error: {}", e);
         }
     });
     Ok(())
@@ -387,7 +387,6 @@ async fn aoe_upload_loop() -> Result<(), String> {
             let payload = serde_json::to_string(&body).unwrap();
             client_publish(&client, &topic_request_upload, &payload).await?;
         }
-
     }
 }
 
@@ -414,7 +413,7 @@ async fn query_aoe_result(token: String, ids: Vec<u64>) -> Result<PbAoeResults, 
             }
         },
         Err(ee) => {
-            log::error!("连接PLCC失败：{:?}", ee);
+            log::error!("link to plcc error: {:?}", ee);
             Err(format!("连接PLCC失败：{:?}", ee))
         }
     }

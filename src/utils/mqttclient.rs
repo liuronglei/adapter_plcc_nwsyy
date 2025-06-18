@@ -65,14 +65,14 @@ pub async fn do_query_dev(name: &str, host: &str, port: u16, dev_ids: Vec<String
                             Err(e) => tx.send(Err(format!("查询设备GUID，解析返回字符串失败: {:?}", e))),
                         };
                         if send_result.is_err() {
-                            log::error!("查询设备GUID，接收mqtt消息发生错误");
+                            log::error!("do dev_guid error: receive mqtt massage failed");
                         }
                         break;
                     }
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    let _ = tx.send(Err(format!("查询设备GUID，发生错误: {:?}", e)));
+                    let _ = tx.send(Err(format!("do dev_guid error: {:?}", e)));
                     break;
                 }
             }
@@ -117,7 +117,7 @@ pub async fn do_register(name: &str, host: &str, port: u16) -> Result<(), String
                             Err(e) => tx.send(Err(format!("注册APP，解析返回字符串失败: {:?}", e))),
                         };
                         if send_result.is_err() {
-                            log::error!("注册APP，接收mqtt消息发生错误");
+                            log::error!("do register error: receive mqtt massage failed");
                         }
                         break;
                     }
@@ -163,7 +163,7 @@ pub async fn do_data_query(name: &str, host: &str, port: u16) -> Result<(), Stri
 pub async fn do_keep_alive() -> Result<(), String> {
     tokio::spawn(async {
         if let Err(e) = keep_alive().await {
-            log::error!("保活监听任务失败：{}", e);
+            log::error!("do keep_alive error: {}", e);
         }
     });
     Ok(())
@@ -194,7 +194,7 @@ pub async fn keep_alive() -> Result<(), String> {
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    log::error!("保活监听发生错误: {:?}", e);
+                    log::error!("do keep_alive error: {:?}", e);
                     break;
                 }
             }

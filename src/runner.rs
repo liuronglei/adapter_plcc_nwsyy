@@ -35,39 +35,38 @@ pub async fn run_adapter() -> std::io::Result<()> {
     let mqtt_server_port = env.get_mqtt_server_port();
     let data_path = env.get_db_dir();
     // APP注册和数据查询
-    log::info!("进入注册流程");
+    log::info!("start do register mqtt");
     match do_register("plcc_register", &mqtt_server, mqtt_server_port).await {
         Ok(_) => {},
         Err(err) => {
-            log::error!("注册APP发生错误：{err}");
+            log::error!("do register error: {err}");
         },
     }
-    log::info!("注册流程结束");
-    log::info!("进入数据总召流程");
+    log::info!("end do register mqtt");
+    log::info!("start do data_query mqtt");
     match do_data_query("plcc_data_query", &mqtt_server, mqtt_server_port).await {
         Ok(_) => {},
         Err(err) => {
-            log::error!("数据总召错误：{err}");
+            log::error!("do data_query error: {err}");
         },
     }
-    log::info!("数据总召流程结束");
-    log::info!("进入AOE结果监听流程");
+    log::info!("end do data_query mqtt");
+    log::info!("start do aoe_result_upload mqtt");
     match aoe_result_upload().await {
         Ok(_) => {},
         Err(err) => {
-            log::error!("AOE结果监听错误：{err}");
+            log::error!("do aoe_result_upload error: {err}");
         },
     }
-    log::info!("AOE结果监听流程结束");
-    log::info!("进入保活监听流程");
+    log::info!("end do aoe_result_upload mqtt");
+    log::info!("start do keep_alive mqtt");
     match do_keep_alive().await {
         Ok(_) => {},
         Err(err) => {
-            log::error!("保活监听错误：{err}");
+            log::error!("do keep_alive error: {err}");
         },
     }
-    log::info!("保活监听流程结束");
-    log::info!("开始启动API服务");
+    log::info!("end do keep_alive mqtt");
     let parser_sender = start_parser_service(data_path.to_string());
     let cloned_parser_sender = Data::new(parser_sender.clone());
     let actix_web_job = std::thread::spawn(move || {
