@@ -8,53 +8,66 @@ use crate::ADAPTER_NAME;
 use crate::parser::{start_parser_service, config_parser_web_service};
 use crate::utils::mqttclient::{do_register, do_data_query, do_keep_alive};
 use crate::utils::plccapi::aoe_result_upload;
+use crate::utils::log_init::write_log_config;
 use crate::env::Env;
 
 pub async fn run_adapter() -> std::io::Result<()> {
     Env::init(ADAPTER_NAME);
     let env = Env::get_env(ADAPTER_NAME);
+    // 初始化日志
+    let log_config = env.get_log_config();
+    let (_, log_config_file) = write_log_config(ADAPTER_NAME, &log_config);
+    match log4rs::init_file(log_config_file.as_str(), Default::default()) {
+        Ok(_) => {
+            log::info!("Log4rs initialized");
+            log::trace!("TRACE LOG IS ON");
+            log::debug!("DEBUG LOG IS ON");
+            log::info!("INFO LOG IS ON");
+            log::warn!("WARN LOG IS ON");
+            log::error!("ERROR LOG IS ON");
+        }
+        Err(e) => {
+            log::error!("Failed to initialize log4rs, err: {e}");
+        }
+    }
     let http_server_port = env.get_http_server_port();
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
     let data_path = env.get_db_dir();
     // APP注册和数据查询
-    println!("进入注册流程");
+    log::info!("进入注册流程");
     match do_register("plcc_register", &mqtt_server, mqtt_server_port).await {
         Ok(_) => {},
         Err(err) => {
-            log::error!("{err}");
-            println!("{err}");
+            log::error!("注册APP发生错误：{err}");
         },
     }
     log::info!("注册流程结束");
-    println!("进入数据查询流程");
+    log::info!("进入数据总召流程");
     match do_data_query("plcc_data_query", &mqtt_server, mqtt_server_port).await {
         Ok(_) => {},
         Err(err) => {
-            log::error!("{err}");
-            println!("{err}");
+            log::error!("数据总召错误：{err}");
         },
     }
-    println!("数据查询流程结束");
-    println!("进入AOE结果监听流程");
+    log::info!("数据总召流程结束");
+    log::info!("进入AOE结果监听流程");
     match aoe_result_upload().await {
         Ok(_) => {},
         Err(err) => {
-            log::error!("{err}");
-            println!("{err}");
+            log::error!("AOE结果监听错误：{err}");
         },
     }
-    println!("AOE结果监听流程结束");
-    println!("进入保活监听流程");
+    log::info!("AOE结果监听流程结束");
+    log::info!("进入保活监听流程");
     match do_keep_alive().await {
         Ok(_) => {},
         Err(err) => {
-            log::error!("{err}");
-            println!("{err}");
+            log::error!("保活监听错误：{err}");
         },
     }
-    println!("保活监听流程结束");
-    println!("开始启动API服务");
+    log::info!("保活监听流程结束");
+    log::info!("开始启动API服务");
     let parser_sender = start_parser_service(data_path.to_string());
     let cloned_parser_sender = Data::new(parser_sender.clone());
     let actix_web_job = std::thread::spawn(move || {

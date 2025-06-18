@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 
 use log::{error, info, warn};
+use crate::utils::log_init::LogConfig;
 
 // const DEFAULT_CONFIG_PATH : &str = "config";
 // for config
@@ -446,6 +447,22 @@ impl Env {
 
         warn!("Env is not initialized, init now!");
         Env::init(app_name)
+    }
+
+    pub fn get_log_config(&self) -> LogConfig {
+        let log_dir = self.get_log_dir();
+        let log_level = self.get_property(LOG_LEVEL).unwrap().to_string();
+        let log_save_time = self.get_property(LOG_SAVE_TIME).unwrap().to_string();
+        let log_save_size = self.get_property(LOG_SAVE_SIZE).unwrap().to_string();
+        let log_his_file_num = self.get_property(LOG_HIS_FILE_NUM).unwrap().to_string();
+        LogConfig {
+            log_dir,
+            log_level,
+            log_save_time,
+            log_save_size,
+            log_his_file_num,
+            log_is_quiet: false,
+        }
     }
 }
 

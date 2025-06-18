@@ -8,6 +8,7 @@ pub mod context;
 pub mod mqttclient;
 pub mod point_param_map;
 pub mod param_point_map;
+pub mod log_init;
 
 use regex::Regex;
 

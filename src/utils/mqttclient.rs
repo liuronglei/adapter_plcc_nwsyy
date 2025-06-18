@@ -194,7 +194,7 @@ pub async fn keep_alive() -> Result<(), String> {
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    eprintln!("发生错误: {:?}", e);
+                    log::error!("保活监听发生错误: {:?}", e);
                     break;
                 }
             }

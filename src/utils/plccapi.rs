@@ -414,7 +414,7 @@ async fn query_aoe_result(token: String, ids: Vec<u64>) -> Result<PbAoeResults, 
             }
         },
         Err(ee) => {
-            println!("连接PLCC失败：{:?}", ee);
+            log::error!("连接PLCC失败：{:?}", ee);
             Err(format!("连接PLCC失败：{:?}", ee))
         }
     }

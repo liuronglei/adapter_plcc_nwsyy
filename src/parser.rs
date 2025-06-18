@@ -47,8 +47,7 @@ impl ParserManager {
             Some(ParserManager { inner_db })
         } else {
             mydb::add_error_db_path(file_path);
-            warn!("open db {:?} failed", file_path);
-            println!("打开数据库文件错误");
+            log::error!("打开数据库文件 {:?} 失败", file_path);
             None
         }
     }
@@ -61,7 +60,7 @@ impl ParserManager {
         let aoe_dir = env.get_aoe_dir();
         let mqtt_server = env.get_mqtt_server();
         let mqtt_server_port = env.get_mqtt_server_port();
-        println!("开始解析JSON文件");
+        log::info!("开始解析JSON文件");
         match op {
             ParserOperation::UpdateJson(sender) => {
                 let file_name_points = format!("{json_dir}/{point_dir}");
@@ -73,7 +72,7 @@ impl ParserManager {
                     err: "".to_string()
                 };
                 let mut current_id = 65535_u64;
-                println!("开始解析测点JSON文件");
+                log::info!("开始解析测点JSON文件");
                 match self.parse_points(file_name_points).await {
                     Ok(mapping) => points_mapping = mapping.into_iter().collect(),
                     Err(err) => {
@@ -81,8 +80,8 @@ impl ParserManager {
                         result.err = err;
                     }
                 }
-                println!("解析测点JSON文件结束");
-                println!("开始解析通道JSON文件");
+                log::info!("解析测点JSON文件结束");
+                log::info!("开始解析通道JSON文件");
                 match self.parse_transports(file_name_transports, &points_mapping).await {
                     Ok(id) => current_id = id,
                     Err(err) => {
@@ -90,8 +89,8 @@ impl ParserManager {
                         result.err = err;
                     }
                 }
-                println!("解析通道JSON文件结束");
-                println!("开始解析策略JSON文件");
+                log::info!("解析通道JSON文件结束");
+                log::info!("开始解析策略JSON文件");
                 match self.parse_aoes(file_name_aoes, &points_mapping, current_id).await {
                     Ok(()) => {},
                     Err(err) => {
@@ -99,8 +98,8 @@ impl ParserManager {
                         result.err = err;
                     }
                 }
-                println!("解析策略JSON文件结束");
-                println!("开始调用reset");
+                log::info!("解析策略JSON文件结束");
+                log::info!("开始调用reset");
                 match do_reset().await {
                     Ok(()) => {},
                     Err(err) => {
@@ -108,8 +107,8 @@ impl ParserManager {
                         result.err = err;
                     }
                 }
-                println!("调用reset结束");
-                println!("进入数据查询流程");
+                log::info!("调用reset结束");
+                log::info!("进入数据查询流程");
                 // 等待2秒
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                 match do_data_query("plcc_data_query", &mqtt_server, mqtt_server_port).await {
@@ -119,7 +118,7 @@ impl ParserManager {
                         result.err = err;
                     },
                 }
-                println!("数据查询流程结束");
+                log::info!("数据查询流程结束");
                 // 保存到全局变量中
                 param_point_map::save_all(points_mapping.clone());
                 point_param_map::save_reversal(points_mapping);
@@ -163,9 +162,9 @@ impl ParserManager {
             // 反序列化为对象
             match serde_json::from_reader(reader) {
                 Ok(transports) => {
-                    println!("开始查询设备guid");
+                    log::info!("开始查询设备guid");
                     let dev_guids = query_dev_guid(&transports).await?;
-                    println!("结束查询设备guid");
+                    log::info!("结束查询设备guid");
                     let (new_transports, current_id) = transports_to_south(transports, &points_mapping, &dev_guids)?;
                     let _ = update_transports(new_transports).await?;
                     self.save_dev_mapping(&dev_guids);
