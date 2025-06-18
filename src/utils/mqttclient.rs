@@ -251,8 +251,10 @@ pub async fn data_query() -> Result<(), String> {
     let (client, e) = AsyncClient::new(mqttoptions, 10);
     let topic_request_query = format!("/sys.dbc/{app_name}/S-dataservice/F-GetRealData");
     let devs = query_dev_mapping().await?;
-    let payload = serde_json::to_string(&generate_query_data(&devs)).unwrap();
-    client_publish(&client, &topic_request_query, &payload).await?;
+    if !devs.is_empty() {
+        let payload = serde_json::to_string(&generate_query_data(&devs)).unwrap();
+        client_publish(&client, &topic_request_query, &payload).await?;
+    }
     Ok(())
 }
 
