@@ -59,7 +59,6 @@ impl ParserManager {
         let point_dir = env.get_point_dir();
         let transport_dir = env.get_transport_dir();
         let aoe_dir = env.get_aoe_dir();
-        log::info!("start parse JSON file");
         match op {
             ParserOperation::UpdateJson(sender) => {
                 let file_name_points = format!("{json_dir}/{point_dir}");
@@ -170,6 +169,7 @@ impl ParserManager {
                     log::info!("end do dev_guid mqtt");
                     let (new_transports, current_id) = transports_to_south(transports, &points_mapping, &dev_guids)?;
                     let _ = update_transports(new_transports).await?;
+                    self.delete_all_dev_mapping();
                     self.save_dev_mapping(&devs);
                     Ok(current_id)
                 },
@@ -226,8 +226,13 @@ impl ParserManager {
         }
     }
 
-    fn delete_dev_mapping(&self, ids: Vec<String>) -> bool {
-        let keys = ids.iter().map(|id|id.as_bytes().to_vec()).collect::<Vec<Vec<u8>>>();
+    fn delete_all_dev_mapping(&self) -> bool {
+        let devs = self.query_dev_mapping();
+        self.delete_dev_mapping(&devs)
+    }
+
+    fn delete_dev_mapping(&self, devs: &Vec<QueryDevResponseBody>) -> bool {
+        let keys = devs.iter().map(|v|v.devID.as_bytes().to_vec()).collect::<Vec<Vec<u8>>>();
         delete_items_by_keys_with_tree_name(&self.inner_db, DEV_TREE, keys)
     }
 
@@ -288,19 +293,6 @@ async fn get_point_mapping(
 
 #[get("/api/v1/parser/dev_mapping")]
 async fn get_dev_mapping(
-    sender: web::Data<Sender<ParserOperation>>,
-) -> HttpResponse {
-    let (tx, rx) = bounded(1);
-    if let Ok(()) = sender.send(ParserOperation::GetDevMapping(tx)).await {
-        if let Ok(r) = rx.recv().await {
-            return HttpResponse::Ok().content_type("application/json").json(r);
-        }
-    }
-    HttpResponse::RequestTimeout().finish()
-}
-
-#[delete("/api/v1/parser/dev_mapping")]
-async fn delete_dev_mapping(
     sender: web::Data<Sender<ParserOperation>>,
 ) -> HttpResponse {
     let (tx, rx) = bounded(1);

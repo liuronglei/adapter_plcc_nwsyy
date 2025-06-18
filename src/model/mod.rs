@@ -309,22 +309,10 @@ pub fn aoes_to_south(aoes: MyAoes, points_mapping: &HashMap<String, u64>, curren
 
 fn trigger_type_to_south(north: MyTriggerType) -> Result<TriggerType, String> {
     match north {
-        MyTriggerType::SimpleRepeat(v) => {
-            if let Ok(m) = v.parse::<u64>() {
-                Ok(TriggerType::SimpleRepeat(Duration::from_millis(m)))
-            } else {
-                Err("触发类型SimpleRepeat参数错误".to_string())
-            }
-        },
+        MyTriggerType::SimpleRepeat(v) => Ok(TriggerType::SimpleRepeat(Duration::from_millis(v))),
         MyTriggerType::TimeDrive(v) => Ok(TriggerType::TimeDrive(v)),
         MyTriggerType::EventDrive(_) => Ok(TriggerType::EventDrive),
-        MyTriggerType::EventRepeatMix(v) => {
-            if let Ok(m) = v.parse::<u64>() {
-                Ok(TriggerType::EventRepeatMix(Duration::from_millis(m)))
-            } else {
-                Err("触发类型EventRepeatMix参数错误".to_string())
-            }
-        },
+        MyTriggerType::EventRepeatMix(v) => Ok(TriggerType::EventRepeatMix(Duration::from_millis(v))),
         MyTriggerType::EventTimeMix(v) => Ok(TriggerType::EventTimeMix(v)),
     }
 }

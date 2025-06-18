@@ -337,6 +337,7 @@ async fn aoe_upload_loop() -> Result<(), String> {
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
     let app_name = env.get_app_name();
+    let app_model = env.get_app_model();
 
     let mut ticker = interval(Duration::from_secs(5));
     let mut count = 0;
@@ -360,13 +361,13 @@ async fn aoe_upload_loop() -> Result<(), String> {
             }
         }
         count += 1;
-        if let Err(e) = do_aoe_upload(&client, &topic_request_upload, &token, &mut last_time).await {
+        if let Err(e) = do_aoe_upload(&client, &topic_request_upload, &token, &mut last_time, &app_model).await {
             log::error!("do aoe_result_upload error: {}", e);
         }
     }
 }
 
-async fn do_aoe_upload(client: &rumqttc::AsyncClient, topic: &str, token: &str, last_time: &mut HashMap<u64, u64>) -> Result<(), String> {
+async fn do_aoe_upload(client: &rumqttc::AsyncClient, topic: &str, token: &str, last_time: &mut HashMap<u64, u64>, app_model: &str) -> Result<(), String> {
     let my_aoes = query_aoes(token.to_string()).await?;
     let aids = my_aoes.iter().map(|v| v.id).collect::<Vec<u64>>();
     let aoe_results = query_aoe_result(token.to_string(), aids).await?;
@@ -395,7 +396,7 @@ async fn do_aoe_upload(client: &rumqttc::AsyncClient, topic: &str, token: &str, 
             }
         }).collect::<Vec<MyPbAoeResult>>();
     if !my_aoe_result.is_empty() {
-        let body = generate_aoe_result(my_aoe_result);
+        let body = generate_aoe_result(my_aoe_result, app_model.to_string(), "".to_string());
         let payload = serde_json::to_string(&body).unwrap();
         client_publish(client, topic, &payload).await?;
     }

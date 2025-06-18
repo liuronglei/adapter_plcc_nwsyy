@@ -2,6 +2,7 @@ use std::collections::HashMap;
 pub mod tokenizer;
 pub mod shuntingyard;
 pub mod plccapi;
+pub mod localapi;
 pub mod exprparser;
 pub mod expr;
 pub mod context;

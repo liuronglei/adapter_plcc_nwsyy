@@ -7,6 +7,7 @@ use crate::model::north::MyPbAoeResult;
 use crate::ADAPTER_NAME;
 use crate::model::datacenter::*;
 use crate::env::Env;
+use crate::utils::localapi::query_dev_mapping;
 
 pub async fn client_subscribe(client: &AsyncClient, topic: &str) -> Result<(), String> {
     match client.subscribe(topic, QoS::AtMostOnce).await {
@@ -87,8 +88,14 @@ pub async fn do_query_dev(dev_ids: Vec<String>) -> Result<Vec<QueryDevResponseBo
 }
 
 pub async fn do_register() -> Result<(), String> {
-    do_register_model().await?;
-    do_register_app().await?;
+    tokio::spawn(async {
+        if let Err(err) = do_register_model().await {
+            log::error!("{err}");
+        }
+        if let Err(err) = do_register_app().await {
+            log::error!("{err}");
+        }
+    });
     Ok(())
 }
 
@@ -223,6 +230,16 @@ pub async fn do_register_app() -> Result<(), String> {
 }
 
 pub async fn do_data_query() -> Result<(), String> {
+    tokio::spawn(async {
+        actix_rt::time::sleep(Duration::from_millis(5000)).await;
+        if let Err(e) = data_query().await {
+            log::error!("do data_query error: {}", e);
+        }
+    });
+    Ok(())
+}
+
+pub async fn data_query() -> Result<(), String> {
     let env = Env::get_env(ADAPTER_NAME);
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
@@ -232,7 +249,8 @@ pub async fn do_data_query() -> Result<(), String> {
     // mqttoptions.set_credentials("username", "password");
     let (client, e) = AsyncClient::new(mqttoptions, 10);
     let topic_request_query = format!("/sys.dbc/{app_name}/S-dataservice/F-GetRealData");
-    let payload = serde_json::to_string(&generate_query_data()).unwrap();
+    let devs = query_dev_mapping().await?;
+    let payload = serde_json::to_string(&generate_query_data(&devs)).unwrap();
     client_publish(&client, &topic_request_query, &payload).await?;
     Ok(())
 }
@@ -287,7 +305,7 @@ fn generate_register_model(model: String) -> RegisterModel {
         unit: "".to_string(),
         deadzone: "".to_string(),
         ratio: "".to_string(),
-        isReport: "".to_string(),
+        isReport: "0".to_string(),
         userdefine: "".to_string(),
     };
     let time = Local::now().timestamp_millis();
@@ -309,7 +327,7 @@ fn generate_register_app(model: String) -> RegisterApp {
         manuName: "".to_string(),
         proType: "".to_string(),
         deviceType: "".to_string(),
-        isReport: "".to_string(),
+        isReport: "0".to_string(),
         nodeID: "".to_string(),
         productID: "".to_string(),
     };
@@ -326,17 +344,19 @@ fn generate_current_time() -> String {
     now.format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string()
 }
 
-fn generate_query_data() -> DataQuery {
+fn generate_query_data(devs: &Vec<QueryDevResponseBody>) -> DataQuery {
     let time = Local::now().timestamp_millis();
-    let body = DataQueryBody {
-        dev: "DC_PLCC".to_string(),
-        totalcall: "1".to_string(),
-        body: vec![],
-    };
+    let body = devs.iter().map(|v|
+        DataQueryBody {
+            dev: format!("{}_{}", v.model.clone().unwrap_or("".to_string()), v.devID),
+            totalcall: "1".to_string(),
+            body: vec![],
+        }
+    ).collect::<Vec<DataQueryBody>>();
     DataQuery {
-        token: format!("register_{time}"),
+        token: format!("query_data_{time}"),
         time: generate_current_time(),
-        body: vec![body],
+        body,
     }
 }
 
@@ -349,11 +369,11 @@ fn generate_query_dev(dev_ids: Vec<String>) -> QueryDev {
     }
 }
 
-pub fn generate_aoe_result(aoe_result: Vec<MyPbAoeResult>) -> AoeResult {
+pub fn generate_aoe_result(aoe_result: Vec<MyPbAoeResult>, model: String, dev: String) -> AoeResult {
     let time = Local::now().timestamp_millis();
     let body = AoeResultBody {
-        model: "plcc".to_string(),
-        dev: "plcc_1".to_string(),
+        model,
+        dev,
         event: "tgAOEResult".to_string(),
         starttime: generate_current_time(),
         endtime: generate_current_time(),

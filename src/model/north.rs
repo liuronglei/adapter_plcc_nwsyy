@@ -205,13 +205,13 @@ pub struct MySetPoints {
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum MyTriggerType {
     // 简单固定周期触发
-    SimpleRepeat(String),
+    SimpleRepeat(u64),
     // cron expression
     TimeDrive(String),
     // 事件驱动，AOE开始节点条件满足即触发
     EventDrive(String),
     // 事件驱动 && Simple drive
-    EventRepeatMix(String),
+    EventRepeatMix(u64),
     // 事件驱动 && Time drive
     EventTimeMix(String),
 }
