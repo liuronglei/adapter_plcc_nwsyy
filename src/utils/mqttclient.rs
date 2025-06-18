@@ -110,7 +110,7 @@ pub async fn do_register_model() -> Result<(), String> {
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     // mqttoptions.set_credentials("username", "password");
     let topic_request_register = format!("/sys.dbc/{app_name}/S-dataservice/F-SetModel");
-    let topic_response_register = format!("/{app_name}/sys.dbc/S-dataservice/F-GetModelSchema");
+    let topic_response_register = format!("/{app_name}/sys.dbc/S-dataservice/F-SetModel");
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
     // 订阅注册消息返回
     client_subscribe(&client, &topic_response_register).await?;
