@@ -1,4 +1,4 @@
-use actix_web::{get, delete, HttpResponse, web};
+use actix_web::{get, HttpResponse, web};
 use async_channel::{bounded, Sender};
 use log::{info, warn};
 use rocksdb::DB;

@@ -1,7 +1,7 @@
 use rumqttc::{AsyncClient, Event, Incoming, MqttOptions, QoS};
 use tokio::time::{timeout, Duration};
 use tokio::sync::oneshot;
-use chrono::{DateTime, Local, TimeZone};
+use chrono::{Local, TimeZone};
 
 use crate::model::north::MyPbAoeResult;
 use crate::ADAPTER_NAME;
@@ -470,6 +470,9 @@ fn generate_time(ts_millis: Option<u64>) -> String {
     } else {
         Local::now().timestamp_millis()
     };
-    let dt: DateTime<Local> = Local.timestamp_millis(time);
-    dt.format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string()
+    if let chrono::LocalResult::Single(dt) = Local.timestamp_millis_opt(time) {
+        dt.format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string()
+    } else {
+        generate_current_time()
+    }
 }
