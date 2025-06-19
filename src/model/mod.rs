@@ -72,22 +72,26 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
     let mut transports_result = vec![];
 
     // 遥测遥信
+    let mut point_ycyx_ids = vec![];
     let mut filter_keys = vec![];
     let mut filter_values = vec![];
     let mut filter_keys_cx = vec![];
-    let mut json_tags = HashMap::new();
+    let mut json_tags_ycyx = HashMap::new();
     let mut point_ycyx_index = 0;
-    let mut point_ycyx_ids = vec![];
 
     // 遥调
     let mut point_yt_ids = vec![];
     let mut json_write_template_yt = HashMap::new();
     let mut json_write_tag_yt = HashMap::new();
+    let mut json_tags_yt = HashMap::new();
+    let mut point_yt_index = 0;
     
     // 遥控
     let mut point_yk_ids = vec![];
     let mut json_write_template_yk = HashMap::new();
     let mut json_write_tag_yk = HashMap::new();
+    let mut json_tags_yk = HashMap::new();
+    let mut point_yk_index = 0;
 
     let mut current_tid = 65536_u64;
     for (dev_id, (point_ycyx, point_yt, point_yk)) in new_transport.dev_ids_map.iter() {
@@ -103,7 +107,7 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
             if points_mapping.contains_key(v) {
                 let mut value_map = HashMap::with_capacity(1);
                 value_map.insert("val".to_string(), point_ycyx_index);
-                json_tags.insert(format!("[{point_ycyx_index}]"), value_map);
+                json_tags_ycyx.insert(format!("[{point_ycyx_index}]"), value_map);
                 if let Some(tag) = get_north_tag(v) {
                     filter_keys.push(vec![
                         "body/_array/name".to_string(),
@@ -111,7 +115,7 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
                         "dev".to_string()
                     ]);
                     filter_values.push(Some(vec![str_to_json_value(&tag),
-                        str_to_json_value("1"),
+                        str_to_json_value("0"),
                         str_to_json_value(&dev_guid)
                     ]));
                     filter_keys_cx.push(vec![
@@ -130,6 +134,9 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
         for v in point_yt.iter() {
             if points_mapping.contains_key(v) {
                 if let Some(tag) = get_north_tag(v) {
+                    let mut value_map = HashMap::with_capacity(1);
+                    value_map.insert("val".to_string(), point_yt_index);
+                    json_tags_yt.insert(format!("[{point_yt_index}]"), value_map);
                     let pid = *points_mapping.get(v).unwrap();
                     json_write_template_yt.insert(
                         pid,
@@ -141,6 +148,7 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
                     );
                 }
             }
+            point_yt_index = point_yt_index + 1;
         }
         let points = point_yk.iter()
             .filter(|v|points_mapping.contains_key(*v))
@@ -149,6 +157,9 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
         for v in point_yk.iter() {
             if points_mapping.contains_key(v) {
                 if let Some(tag) = get_north_tag(v) {
+                    let mut value_map = HashMap::with_capacity(1);
+                    value_map.insert("val".to_string(), point_yk_index);
+                    json_tags_yk.insert(format!("[{point_yk_index}]"), value_map);
                     let pid = *points_mapping.get(v).unwrap();
                     json_write_template_yk.insert(
                         pid,
@@ -160,6 +171,7 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
                     );
                 }
             }
+            point_yk_index = point_yk_index + 1;
         }
     }
     // 遥测遥信通道
@@ -181,7 +193,7 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
             array_filter: None,
             filter_keys: Some(filter_keys.clone()),
             filter_values: Some(filter_values.clone()),
-            json_tags: Some(json_tags.clone()),
+            json_tags: Some(json_tags_ycyx.clone()),
             json_write_template: None,
             json_write_tag: None,
         };
@@ -202,7 +214,7 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
             array_filter: None,
             filter_keys: Some(filter_keys),
             filter_values: Some(filter_values.clone()),
-            json_tags: Some(json_tags.clone()),
+            json_tags: Some(json_tags_ycyx.clone()),
             json_write_template: None,
             json_write_tag: None,
         };
@@ -223,7 +235,7 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
             array_filter: None,
             filter_keys: Some(filter_keys_cx),
             filter_values: Some(filter_values),
-            json_tags: Some(json_tags),
+            json_tags: Some(json_tags_ycyx),
             json_write_template: None,
             json_write_tag: None,
         };
@@ -240,7 +252,7 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
             mqtt_broker: mqtt_broker.clone(),
             point_id: 0_u64,
             point_ids: point_yt_ids,
-            read_topic: "".to_string(),
+            read_topic: format!("/sys.dbc/{app_name}/S-dataservice/F-SetPara"),
             write_topic: format!("/sys.dbc/{app_name}/S-dataservice/F-SetPara"),
             is_json: true,
             is_transfer: false,
@@ -250,7 +262,7 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
             array_filter: Some("body".to_string()),
             filter_keys: None,
             filter_values: None,
-            json_tags: None,
+            json_tags: Some(json_tags_yt),
             json_write_template: Some(json_write_template_yt),
             json_write_tag: Some(json_write_tag_yt),
         };
@@ -265,7 +277,7 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
             mqtt_broker: mqtt_broker.clone(),
             point_id: 0_u64,
             point_ids: point_yk_ids,
-            read_topic: "".to_string(),
+            read_topic: format!("/sys.brd/{app_name}/S-dataservice/F-RemoteCtrl"),
             write_topic: format!("/sys.brd/{app_name}/S-dataservice/F-RemoteCtrl"),
             is_json: true,
             is_transfer: false,
@@ -275,7 +287,7 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
             array_filter: Some("body".to_string()),
             filter_keys: None,
             filter_values: None,
-            json_tags: None,
+            json_tags: Some(json_tags_yk),
             json_write_template: Some(json_write_template_yk),
             json_write_tag: Some(json_write_tag_yk),
         };
