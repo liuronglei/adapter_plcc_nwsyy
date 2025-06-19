@@ -99,7 +99,7 @@ pub async fn do_register() -> Result<(), String> {
     Ok(())
 }
 
-pub async fn do_register_model() -> Result<(), String> {
+async fn do_register_model() -> Result<(), String> {
     let env = Env::get_env(ADAPTER_NAME);
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
@@ -164,7 +164,7 @@ pub async fn do_register_model() -> Result<(), String> {
     Ok(())
 }
 
-pub async fn do_register_app() -> Result<(), String> {
+async fn do_register_app() -> Result<(), String> {
     let env = Env::get_env(ADAPTER_NAME);
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
@@ -248,12 +248,30 @@ pub async fn data_query() -> Result<(), String> {
     let mut mqttoptions = MqttOptions::new("plcc_data_query", &mqtt_server, mqtt_server_port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     // mqttoptions.set_credentials("username", "password");
-    let (client, e) = AsyncClient::new(mqttoptions, 10);
+    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
     let topic_request_query = format!("/sys.dbc/{app_name}/S-dataservice/F-GetRealData");
+    let topic_response_query = format!("/{app_name}/sys.dbc/S-dataservice/F-GetRealData");
     let devs = query_dev_mapping().await?;
     if !devs.is_empty() {
-        let payload = serde_json::to_string(&generate_query_data(&devs)).unwrap();
+        let payload = serde_json::to_string(&generate_query_data(&devs)).unwrap();// 订阅注册消息返回
+        client_subscribe(&client, &topic_response_query).await?;
         client_publish(&client, &topic_request_query, &payload).await?;
+        tokio::spawn(async move {
+            loop {
+                match eventloop.poll().await {
+                    Ok(Event::Incoming(Incoming::Publish(p))) => {
+                        if p.topic == topic_response_query {
+                            break;
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        log::error!("do data_query error: {:?}", e);
+                        break;
+                    }
+                }
+            }
+        });
     }
     Ok(())
 }

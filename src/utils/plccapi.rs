@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use rumqttc::{AsyncClient, MqttOptions};
 use reqwest::{Client, StatusCode};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use serde_json::json;
@@ -344,11 +345,22 @@ async fn aoe_upload_loop() -> Result<(), String> {
     let mut token = "".to_string();
     let mut last_time: HashMap<u64, u64> = HashMap::new();
 
-    let mut mqttoptions = rumqttc::MqttOptions::new("plcc_aoe_result", &mqtt_server, mqtt_server_port);
+    let mut mqttoptions = MqttOptions::new("plcc_aoe_result", &mqtt_server, mqtt_server_port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     // mqttoptions.set_credentials("username", "password");
     let topic_request_upload = format!("/sys.brd/{app_name}/S-dataservice/F-UpdateSOE");
-    let (client, e) = rumqttc::AsyncClient::new(mqttoptions, 10);
+    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 100);
+    tokio::spawn(async move {
+        loop {
+            match eventloop.poll().await {
+                Ok(_) => {}
+                Err(e) => {
+                    log::error!("do aoe_result_upload error: {:?}", e);
+                    break;
+                }
+            }
+        }
+    });
     loop {
         ticker.tick().await;
         if count >= 86400 {
@@ -367,7 +379,7 @@ async fn aoe_upload_loop() -> Result<(), String> {
     }
 }
 
-async fn do_aoe_upload(client: &rumqttc::AsyncClient, topic: &str, token: &str, last_time: &mut HashMap<u64, u64>, app_model: &str) -> Result<(), String> {
+async fn do_aoe_upload(client: &AsyncClient, topic: &str, token: &str, last_time: &mut HashMap<u64, u64>, app_model: &str) -> Result<(), String> {
     let my_aoes = query_aoes(token.to_string()).await?;
     let aids = my_aoes.iter().map(|v| v.id).collect::<Vec<u64>>();
     let aoe_results = query_aoe_result(token.to_string(), aids).await?;
@@ -376,8 +388,10 @@ async fn do_aoe_upload(client: &rumqttc::AsyncClient, topic: &str, token: &str, 
         .filter(|a| {
             let aoe_id = a.aoe_id.unwrap();
             let end_time = a.end_time.unwrap();
-            if let Some(v) = last_time.get(&aoe_id) {
-                *v != end_time
+            if let Some(v) = last_time.get_mut(&aoe_id) {
+                let old = v.clone();
+                *v = end_time;
+                old != end_time
             } else {
                 last_time.insert(aoe_id, end_time);
                 true
