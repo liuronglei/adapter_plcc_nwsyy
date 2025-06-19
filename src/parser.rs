@@ -74,6 +74,7 @@ impl ParserManager {
                 match self.parse_points(file_name_points).await {
                     Ok(mapping) => points_mapping = mapping.into_iter().collect(),
                     Err(err) => {
+                        log::error!("{err}");
                         result.result = false;
                         result.err = err;
                     }
@@ -83,6 +84,7 @@ impl ParserManager {
                 match self.parse_transports(file_name_transports, &points_mapping).await {
                     Ok(id) => current_id = id,
                     Err(err) => {
+                        log::error!("{err}");
                         result.result = false;
                         result.err = err;
                     }
@@ -92,6 +94,7 @@ impl ParserManager {
                 match self.parse_aoes(file_name_aoes, &points_mapping, current_id).await {
                     Ok(()) => {},
                     Err(err) => {
+                        log::error!("{err}");
                         result.result = false;
                         result.err = err;
                     }
@@ -101,6 +104,7 @@ impl ParserManager {
                 match do_reset().await {
                     Ok(()) => {},
                     Err(err) => {
+                        log::error!("{err}");
                         result.result = false;
                         result.err = err;
                     }
@@ -108,10 +112,11 @@ impl ParserManager {
                 log::info!("end do reset");
                 log::info!("start do query_data mqtt");
                 // 等待2秒
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 match do_data_query().await {
                     Ok(()) => {},
                     Err(err) => {
+                        log::error!("{err}");
                         result.result = false;
                         result.err = err;
                     },

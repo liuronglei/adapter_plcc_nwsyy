@@ -9,4 +9,6 @@ aoeFileDir = aoes.json
 plccServer = http://localhost:8181
 plccUser = admin
 plccPwd = easy2021
-plccName = ext.syy.plcc
+LogDir = C:/project/other/test_file/log
+appName = ext.syy.plcc
+appModel = DC_PLCC
