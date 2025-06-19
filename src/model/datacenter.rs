@@ -103,14 +103,14 @@ pub struct QueryDevResponseBody {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct AoeResult {
+pub struct AoeUpdate {
     pub token: String,
     pub time: String,
-    pub body: Vec<AoeResultBody>,
+    pub body: Vec<AoeUpdateBody>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct AoeResultBody {
+pub struct AoeUpdateBody {
     pub model: String,
     pub dev: String,
     pub event: String,
@@ -121,6 +121,45 @@ pub struct AoeResultBody {
     #[serde(rename = "IsNeedRpt")]
     pub is_need_rpt: String,
     pub extdata: Vec<MyPbAoeResult>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AoeSet {
+    pub token: String,
+    pub time: String,
+    #[serde(rename = "SourType")]
+    pub sour_type: String,
+    pub body: Vec<AoeSetBody>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AoeSetBody {
+    pub model: String,
+    pub dev: String,
+    pub event: String,
+    pub timestamp: String,
+    pub timestartgather: String,
+    pub timeendgather: String,
+    pub starttimestamp: String,
+    pub endtimestamp: String,
+    #[serde(rename = "HappenSrc")]
+    pub happen_src: String,
+    #[serde(rename = "IsNeedRpt")]
+    pub is_need_rpt: String,
+    pub occurnum: String,
+    #[serde(rename = "EventLevel")]
+    pub event_level: String,
+    #[serde(rename = "RptStatus")]
+    pub rpt_status: Vec<RptStatusItem>,
+    pub data: String,
+    pub extdata: Vec<MyPbAoeResult>,
+}
+
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RptStatusItem {
+    #[serde(rename = "Net-1")]
+    pub net_1: String,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]

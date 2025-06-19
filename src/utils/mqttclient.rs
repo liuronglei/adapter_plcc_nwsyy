@@ -1,7 +1,7 @@
 use rumqttc::{AsyncClient, Event, Incoming, MqttOptions, QoS};
 use tokio::time::{timeout, Duration};
 use tokio::sync::oneshot;
-use chrono::Local;
+use chrono::{DateTime, Local, TimeZone};
 
 use crate::model::north::MyPbAoeResult;
 use crate::ADAPTER_NAME;
@@ -390,22 +390,54 @@ fn generate_query_dev(dev_ids: Vec<String>) -> QueryDev {
     }
 }
 
-pub fn generate_aoe_result(aoe_result: Vec<MyPbAoeResult>, model: String, dev: String) -> AoeResult {
+pub fn generate_aoe_update(aoe_result: Vec<MyPbAoeResult>, model: String, dev: String) -> AoeUpdate {
     let time = Local::now().timestamp_millis();
-    let body = AoeResultBody {
+    let (min_start, max_end) = find_min_start_max_end(&aoe_result);
+    let body = AoeUpdateBody {
         model,
         dev,
         event: "tgAOEResult".to_string(),
-        starttime: generate_current_time(),
-        endtime: generate_current_time(),
-        happen_src: "00".to_string(),
+        starttime: generate_time(min_start),
+        endtime: generate_time(max_end),
+        happen_src: "000000".to_string(),
         is_need_rpt: "Yes".to_string(),
-        extdata: aoe_result.clone(),
+        extdata: aoe_result,
     };
-    AoeResult {
-        token: format!("aoe_result_{time}"),
+    AoeUpdate {
+        token: format!("aoe_result_update_{time}"),
         time: generate_current_time(),
         body: vec![body],
+    }
+}
+
+pub fn generate_aoe_set(aoe_result: Vec<MyPbAoeResult>, model: String, dev: String) -> AoeSet {
+    let time = Local::now().timestamp_millis();
+    let timestamp = generate_current_time();
+    let (min_start, max_end) = find_min_start_max_end(&aoe_result);
+    let start_time = generate_time(min_start);
+    let end_time = generate_time(max_end);
+    let body = AoeSetBody {
+        model,
+        dev,
+        event: "tgAOEResult".to_string(),
+        timestamp: timestamp.clone(),
+        timestartgather: start_time.clone(),
+        timeendgather: end_time.clone(),
+        starttimestamp: start_time.clone(),
+        endtimestamp: end_time.clone(),
+        happen_src: "000000".to_string(),
+        is_need_rpt: "Yes".to_string(),
+        occurnum: "1".to_string(),
+        event_level: "common".to_string(),
+        rpt_status: vec![RptStatusItem { net_1: "00".to_string() }],
+        data: "".to_string(),
+        extdata: aoe_result,
+    };
+    AoeSet {
+        token: format!("aoe_resul_set_{time}"),
+        time: timestamp,
+        body: vec![body],
+        sour_type: "104".to_string(),
     }
 }
 
@@ -416,4 +448,28 @@ fn generate_keep_alive_response(request: KeepAliveRequest) -> KeepAliveResponse 
         ack: "true".to_string(),
         errmsg: "success".to_string(),
     }
+}
+
+fn find_min_start_max_end(aoe_result: &Vec<MyPbAoeResult>) -> (Option<u64>, Option<u64>) {
+    let min_start = aoe_result
+        .iter()
+        .filter_map(|r| r.start_time)
+        .min();
+
+    let max_end = aoe_result
+        .iter()
+        .filter_map(|r| r.end_time)
+        .max();
+
+    (min_start, max_end)
+}
+
+fn generate_time(ts_millis: Option<u64>) -> String {
+    let time = if let Some(time) = ts_millis {
+        time as i64
+    } else {
+        Local::now().timestamp_millis()
+    };
+    let dt: DateTime<Local> = Local.timestamp_millis(time);
+    dt.format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string()
 }

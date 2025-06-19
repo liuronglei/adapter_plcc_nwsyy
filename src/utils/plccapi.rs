@@ -11,7 +11,7 @@ use tokio::time::{interval, Duration};
 use crate::model::aoe_action_result_to_north;
 use crate::model::south::{AoeModel, Measurement, PbAoeResults, Transport};
 use crate::model::north::{MyPbAoeResult, MyPbActionResult};
-use crate::utils::mqttclient::{client_publish, generate_aoe_result};
+use crate::utils::mqttclient::{client_publish, generate_aoe_update, generate_aoe_set};
 use crate::utils::point_param_map;
 use crate::{URL_LOGIN, URL_POINTS, URL_TRANSPORTS,
     URL_AOES, URL_AOE_RESULTS, URL_RESET, ADAPTER_NAME};
@@ -348,7 +348,8 @@ async fn aoe_upload_loop() -> Result<(), String> {
     let mut mqttoptions = MqttOptions::new("plcc_aoe_result", &mqtt_server, mqtt_server_port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     // mqttoptions.set_credentials("username", "password");
-    let topic_request_upload = format!("/sys.brd/{app_name}/S-dataservice/F-UpdateSOE");
+    let topic_request_update = format!("/sys.brd/{app_name}/S-dataservice/F-UpdateSOE");
+    let topic_request_set = format!("/sys.dbc/{app_name}/S-dataservice/F-SetSOE");
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 100);
     tokio::spawn(async move {
         loop {
@@ -373,13 +374,13 @@ async fn aoe_upload_loop() -> Result<(), String> {
             }
         }
         count += 1;
-        if let Err(e) = do_aoe_upload(&client, &topic_request_upload, &token, &mut last_time, &app_model).await {
+        if let Err(e) = do_aoe_upload(&client, &topic_request_update, &topic_request_set, &token, &mut last_time, &app_model).await {
             log::error!("do aoe_result_upload error: {}", e);
         }
     }
 }
 
-async fn do_aoe_upload(client: &AsyncClient, topic: &str, token: &str, last_time: &mut HashMap<u64, u64>, app_model: &str) -> Result<(), String> {
+async fn do_aoe_upload(client: &AsyncClient, topic_request_update: &str, topic_request_set: &str, token: &str, last_time: &mut HashMap<u64, u64>, app_model: &str) -> Result<(), String> {
     let my_aoes = query_aoes(token.to_string()).await?;
     let aids = my_aoes.iter().map(|v| v.id).collect::<Vec<u64>>();
     let aoe_results = query_aoe_result(token.to_string(), aids).await?;
@@ -410,9 +411,12 @@ async fn do_aoe_upload(client: &AsyncClient, topic: &str, token: &str, last_time
             }
         }).collect::<Vec<MyPbAoeResult>>();
     if !my_aoe_result.is_empty() {
-        let body = generate_aoe_result(my_aoe_result, app_model.to_string(), "".to_string());
+        let body = generate_aoe_update(my_aoe_result.clone(), app_model.to_string(), "".to_string());
         let payload = serde_json::to_string(&body).unwrap();
-        client_publish(client, topic, &payload).await?;
+        client_publish(client, topic_request_update, &payload).await?;
+        let body = generate_aoe_set(my_aoe_result, app_model.to_string(), "".to_string());
+        let payload = serde_json::to_string(&body).unwrap();
+        client_publish(client, topic_request_set, &payload).await?;
     }
     Ok(())
 }
