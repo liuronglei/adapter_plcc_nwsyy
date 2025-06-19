@@ -24,13 +24,17 @@ pub fn get_north_tag(north_point: &str) -> Option<String> {
     None
 }
 
-pub fn replace_point(input: &str, points_mapping: &HashMap<String, u64>) -> Result<String, String> {
+fn do_replace_point(input: &str, points_mapping: &HashMap<String, u64>, without_prefix: bool) -> Result<String, String> {
     let re = Regex::new(r"\$\{([^}]+)\}").unwrap();
     let (mut is_success, mut err_str) = (true, "".to_string());
     let point = re.replace_all(input, |caps: &regex::Captures| {
         let key = &caps[1];
         if let Some(value) = points_mapping.get(&format!("${{{key}}}")) {
-            format!("${value}")
+            if without_prefix {
+                value.to_string()
+            } else {
+                format!("${value}")
+            }
         } else {
             // 保留原样
             is_success = false;
@@ -43,6 +47,14 @@ pub fn replace_point(input: &str, points_mapping: &HashMap<String, u64>) -> Resu
     } else {
         Err(format!("测点替换失败：找不到{err_str}对应的测点"))
     }
+}
+
+pub fn replace_point(input: &str, points_mapping: &HashMap<String, u64>) -> Result<String, String> {
+    do_replace_point(input, points_mapping, false)
+}
+
+pub fn replace_point_without_prefix(input: &str, points_mapping: &HashMap<String, u64>) -> Result<String, String> {
+    do_replace_point(input, points_mapping, true)
 }
 
 pub fn get_point_tag(input: &u64, points_mapping: &HashMap<u64, String>) -> Result<String, String> {

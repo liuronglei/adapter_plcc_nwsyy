@@ -11,7 +11,7 @@ use south::{DataUnit, Expr};
 
 use crate::model::north::*;
 use crate::model::south::*;
-use crate::utils::{get_north_tag, replace_point, get_point_tag};
+use crate::utils::{get_north_tag, replace_point, replace_point_without_prefix, get_point_tag};
 use crate::ADAPTER_NAME;
 use crate::env::Env;
 
@@ -601,13 +601,13 @@ fn replace_point_for_aoe(aoes: MyAoes, points_mapping: &HashMap<String, u64>) ->
 fn replace_point_for_set_points(my_set_points: MySetPoints, points_mapping: &HashMap<String, u64>) -> Result<MySetPoints, String> {
     let mut discretes = HashMap::with_capacity(my_set_points.discretes.len());
     for (key, value) in &my_set_points.discretes {
-        let key = replace_point(key, &points_mapping)?;
+        let key = replace_point_without_prefix(key, &points_mapping)?;
         let value = replace_point(value, &points_mapping)?;
         discretes.insert(key, value);
     }
     let mut analogs = HashMap::with_capacity(my_set_points.analogs.len());
     for (key, value) in &my_set_points.analogs {
-        let key = replace_point(key, &points_mapping)?;
+        let key = replace_point_without_prefix(key, &points_mapping)?;
         let value = replace_point(value, &points_mapping)?;
         analogs.insert(key, value);
     }
