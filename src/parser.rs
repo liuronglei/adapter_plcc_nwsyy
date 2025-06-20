@@ -247,6 +247,7 @@ impl ParserManager {
                 sid: *k,
                 nid: *v,
             }
+        }).collect::<Vec<AoeMapping>>();
         if save_items_cbor_to_db_with_tree_name(&self.inner_db, AOE_TREE, &aoes, |aoe| {
             aoe.sid.to_string().as_bytes().to_vec()
         }) {
