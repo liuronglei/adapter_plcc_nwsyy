@@ -382,6 +382,8 @@ async fn aoe_upload_loop() -> Result<(), String> {
 }
 
 async fn do_aoe_upload(client: &AsyncClient, topic_request_update: &str, topic_request_set: &str, token: &str, last_time: &mut HashMap<u64, u64>, app_model: &str) -> Result<(), String> {
+    let env = Env::get_env(ADAPTER_NAME);
+    let app_name = env.get_app_name();
     let my_aoes = query_aoes(token.to_string()).await?;
     let aids = my_aoes.iter().map(|v| v.id).collect::<Vec<u64>>();
     let aoe_results = query_aoe_result(token.to_string(), aids).await?;
@@ -423,10 +425,10 @@ async fn do_aoe_upload(client: &AsyncClient, topic_request_update: &str, topic_r
         }).collect::<Vec<MyPbAoeResult>>();
     if !my_aoe_result.is_empty() {
         let dev = query_register_dev().await?;
-        let body = generate_aoe_update(my_aoe_result.clone(), app_model.to_string(), dev.clone());
+        let body = generate_aoe_update(my_aoe_result.clone(), app_model.to_string(), dev.clone(), app_name.clone());
         let payload = serde_json::to_string(&body).unwrap();
         client_publish(client, topic_request_update, &payload).await?;
-        let body = generate_aoe_set(my_aoe_result, app_model.to_string(), dev);
+        let body = generate_aoe_set(my_aoe_result, app_model.to_string(), dev, app_name);
         let payload = serde_json::to_string(&body).unwrap();
         client_publish(client, topic_request_set, &payload).await?;
     }

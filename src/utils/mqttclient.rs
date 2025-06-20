@@ -458,7 +458,7 @@ fn generate_query_dev(dev_ids: Vec<String>) -> QueryDev {
     }
 }
 
-pub fn generate_aoe_update(aoe_result: Vec<MyPbAoeResult>, model: String, dev: String) -> AoeUpdate {
+pub fn generate_aoe_update(aoe_result: Vec<MyPbAoeResult>, model: String, dev: String, app_name: String) -> AoeUpdate {
     let time = Local::now().timestamp_millis();
     let (min_start, max_end) = find_min_start_max_end(&aoe_result);
     let body = AoeUpdateBody {
@@ -467,7 +467,7 @@ pub fn generate_aoe_update(aoe_result: Vec<MyPbAoeResult>, model: String, dev: S
         event: "tgAOEResult".to_string(),
         starttime: generate_time(min_start),
         endtime: generate_time(max_end),
-        happen_src: "Yes".to_string(),
+        happen_src: app_name,
         is_need_rpt: "Yes".to_string(),
         extdata: aoe_result,
     };
@@ -478,7 +478,7 @@ pub fn generate_aoe_update(aoe_result: Vec<MyPbAoeResult>, model: String, dev: S
     }
 }
 
-pub fn generate_aoe_set(aoe_result: Vec<MyPbAoeResult>, model: String, dev: String) -> AoeSet {
+pub fn generate_aoe_set(aoe_result: Vec<MyPbAoeResult>, model: String, dev: String, app_name: String) -> AoeSet {
     let time = Local::now().timestamp_millis();
     let timestamp = generate_current_time();
     let (min_start, max_end) = find_min_start_max_end(&aoe_result);
@@ -493,7 +493,7 @@ pub fn generate_aoe_set(aoe_result: Vec<MyPbAoeResult>, model: String, dev: Stri
         timeendgather: end_time.clone(),
         starttimestamp: start_time.clone(),
         endtimestamp: end_time.clone(),
-        happen_src: "Yes".to_string(),
+        happen_src: app_name,
         is_need_rpt: "Yes".to_string(),
         occurnum: "1".to_string(),
         event_level: "common".to_string(),
