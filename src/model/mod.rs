@@ -285,7 +285,7 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
             point_id: 0_u64,
             point_ids: point_yt_ids,
             read_topic: format!("/plcc/yt"),
-            write_topic: format!("/sys.dbc/{app_name}/S-dataservice/F-SetPara"),
+            write_topic: format!("/sys.brd/{app_name}/S-dataservice/F-SetPara"),
             is_json: true,
             is_transfer: false,
             keep_alive: None,
