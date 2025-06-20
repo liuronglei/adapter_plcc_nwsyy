@@ -11,8 +11,9 @@ use tokio::time::{interval, Duration};
 use crate::model::aoe_action_result_to_north;
 use crate::model::south::{AoeModel, Measurement, PbAoeResults, Transport};
 use crate::model::north::{MyPbAoeResult, MyPbActionResult};
-use crate::utils::mqttclient::{client_publish, generate_aoe_update, generate_aoe_set};
+use crate::utils::mqttclient::{client_publish, generate_aoe_update, generate_aoe_set, query_register_dev};
 use crate::utils::point_param_map;
+use crate::utils::localapi::query_aoe_mapping;
 use crate::{URL_LOGIN, URL_POINTS, URL_TRANSPORTS,
     URL_AOES, URL_AOE_RESULTS, URL_RESET, ADAPTER_NAME};
 use crate::env::Env;
@@ -385,6 +386,7 @@ async fn do_aoe_upload(client: &AsyncClient, topic_request_update: &str, topic_r
     let aids = my_aoes.iter().map(|v| v.id).collect::<Vec<u64>>();
     let aoe_results = query_aoe_result(token.to_string(), aids).await?;
     let points_mapping = point_param_map::get_all();
+    let aoe_mapping = query_aoe_mapping().await?;
     let my_aoe_result = aoe_results.results.iter()
         .filter(|a| {
             let aoe_id = a.aoe_id.unwrap();
@@ -402,8 +404,13 @@ async fn do_aoe_upload(client: &AsyncClient, topic_request_update: &str, topic_r
             let action_results = a.action_results.iter().filter_map(|action_result|{
                 aoe_action_result_to_north(action_result.clone(), &points_mapping).ok()
             }).collect::<Vec<MyPbActionResult>>();
+            let aoe_id = if let Some(sid) = a.aoe_id {
+                aoe_mapping.get(&sid).copied()
+            } else {
+                None
+            };
             MyPbAoeResult {
-                aoe_id: a.aoe_id,
+                aoe_id,
                 start_time: a.start_time,
                 end_time: a.end_time,
                 event_results: a.event_results.clone(),
@@ -411,10 +418,11 @@ async fn do_aoe_upload(client: &AsyncClient, topic_request_update: &str, topic_r
             }
         }).collect::<Vec<MyPbAoeResult>>();
     if !my_aoe_result.is_empty() {
-        let body = generate_aoe_update(my_aoe_result.clone(), app_model.to_string(), "".to_string());
+        let dev = query_register_dev().await?;
+        let body = generate_aoe_update(my_aoe_result.clone(), app_model.to_string(), dev.clone());
         let payload = serde_json::to_string(&body).unwrap();
         client_publish(client, topic_request_update, &payload).await?;
-        let body = generate_aoe_set(my_aoe_result, app_model.to_string(), "".to_string());
+        let body = generate_aoe_set(my_aoe_result, app_model.to_string(), dev);
         let payload = serde_json::to_string(&body).unwrap();
         client_publish(client, topic_request_set, &payload).await?;
     }

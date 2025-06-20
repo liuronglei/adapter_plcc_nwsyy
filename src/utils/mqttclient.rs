@@ -319,6 +319,65 @@ pub async fn keep_alive() -> Result<(), String> {
     Ok(())
 }
 
+pub async fn query_register_dev() -> Result<String, String> {
+    let env = Env::get_env(ADAPTER_NAME);
+    let mqtt_server = env.get_mqtt_server();
+    let mqtt_server_port = env.get_mqtt_server_port();
+    let mqtt_timeout = env.get_mqtt_timeout();
+    let app_name = env.get_app_name();
+    let mut mqttoptions = MqttOptions::new("plcc_register_dev", &mqtt_server, mqtt_server_port);
+    mqttoptions.set_keep_alive(Duration::from_secs(5));
+    // mqttoptions.set_credentials("username", "password");
+    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
+    let topic_request_query = format!("/sys.dbc/{app_name}/S-dataservice/F-GetRegister");
+    let topic_response_query = format!("/{app_name}/sys.dbc/S-dataservice/F-GetRegister");
+    let payload = serde_json::to_string(&generate_query_register_dev()).unwrap();// 订阅注册消息返回
+    client_subscribe(&client, &topic_response_query).await?;
+    client_publish(&client, &topic_request_query, &payload).await?;
+    // 处理订阅消息
+    let (tx, rx) = oneshot::channel::<Result<String, String>>();
+    tokio::spawn(async move {
+        loop {
+            let event = eventloop.poll().await;
+            match event {
+                Ok(Event::Incoming(Incoming::Publish(p))) => {
+                    if p.topic == topic_response_query {
+                        let send_result = match serde_json::from_slice::<RegisterDevResult>(&p.payload) {
+                            Ok(msg) => {
+                                let mut dev = "".to_string();
+                                if !msg.body.is_empty() {
+                                    let first_body = msg.body.first().unwrap();
+                                    if !first_body.body.is_empty() {
+                                        dev = first_body.body.first().unwrap().dev.clone();
+                                    }
+                                }
+                                tx.send(Ok(dev))
+                            }
+                            Err(e) => tx.send(Err(format!("查询注册dev，解析返回字符串失败: {:?}", e))),
+                        };
+                        if send_result.is_err() {
+                            log::error!("do query_register_dev error: receive mqtt massage failed");
+                        }
+                        break;
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    let _ = tx.send(Err(format!("查询注册dev，发生错误: {:?}", e)));
+                    break;
+                }
+            }
+        }
+    });
+    match timeout(Duration::from_secs(mqtt_timeout), rx).await {
+        Ok(Ok(result)) => {
+            result
+        }
+        Ok(Err(_)) => Err("查询注册dev，等待响应失败".to_string()),
+        Err(_) => Err("查询注册dev超时，未收到MQTT响应".to_string()),
+    }
+}
+
 fn generate_register_model(model: String) -> RegisterModel {
     let body = RegisterModelBody {
         name: "tgPowerCutAlarm".to_string(),
@@ -381,6 +440,15 @@ fn generate_query_data(devs: &Vec<QueryDevResponseBody>) -> DataQuery {
     }
 }
 
+fn generate_query_register_dev() -> QueryRegisterDev {
+    let time = Local::now().timestamp_millis();
+    QueryRegisterDev {
+        token: format!("query_register_dev_{time}"),
+        time: generate_current_time(),
+        body: vec!["DC_SDTTU_frozen".to_string()],
+    }
+}
+
 fn generate_query_dev(dev_ids: Vec<String>) -> QueryDev {
     let time = Local::now().timestamp_millis();
     QueryDev {
@@ -399,7 +467,7 @@ pub fn generate_aoe_update(aoe_result: Vec<MyPbAoeResult>, model: String, dev: S
         event: "tgAOEResult".to_string(),
         starttime: generate_time(min_start),
         endtime: generate_time(max_end),
-        happen_src: "000000".to_string(),
+        happen_src: "Yes".to_string(),
         is_need_rpt: "Yes".to_string(),
         extdata: aoe_result,
     };
@@ -425,7 +493,7 @@ pub fn generate_aoe_set(aoe_result: Vec<MyPbAoeResult>, model: String, dev: Stri
         timeendgather: end_time.clone(),
         starttimestamp: start_time.clone(),
         endtimestamp: end_time.clone(),
-        happen_src: "000000".to_string(),
+        happen_src: "Yes".to_string(),
         is_need_rpt: "Yes".to_string(),
         occurnum: "1".to_string(),
         event_level: "common".to_string(),

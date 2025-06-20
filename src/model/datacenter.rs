@@ -103,6 +103,50 @@ pub struct QueryDevResponseBody {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct QueryRegisterDev {
+    pub body: Vec<String>,
+    pub time: String,
+    pub token: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RegisterDevResult {
+    pub body: Vec<RegisterDevResultBody>,
+    pub time: String,
+    pub token: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RegisterDevResultBody {
+    pub body: Vec<DeviceEntry>,
+    pub model: String,
+    pub port: String,
+}
+
+#[allow(non_snake_case)]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeviceEntry {
+    pub addr: String,
+    pub appname: String,
+    pub desc: String,
+    pub dev: String,
+    #[serde(rename = "deviceType")]
+    pub device_type: String,
+    pub guid: String,
+    pub isReport: String,
+    #[serde(rename = "manuID")]
+    pub manu_id: String,
+    #[serde(rename = "manuName")]
+    pub manu_name: String,
+    #[serde(rename = "nodeID")]
+    pub node_id: String,
+    #[serde(rename = "proType")]
+    pub pro_type: String,
+    #[serde(rename = "productID")]
+    pub product_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AoeUpdate {
     pub token: String,
     pub time: String,

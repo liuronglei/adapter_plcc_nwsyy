@@ -5,6 +5,7 @@ use rocksdb::DB;
 use std::fs::File;
 use std::io::BufReader;
 use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
 
 use crate::db::mydb;
 use crate::model::datacenter::QueryDevResponseBody;
@@ -18,6 +19,7 @@ use crate::utils::{param_point_map, point_param_map};
 use crate::env::Env;
 
 const POINT_TREE: &str = "point";
+const AOE_TREE: &str = "aoe";
 const DEV_TREE: &str = "dev";
 
 pub const OPERATION_RECEIVE_BUFF_NUM: usize = 100;
@@ -26,8 +28,15 @@ pub enum ParserOperation {
     UpdateJson(Sender<ParserResult>),
     GetPointMapping(Sender<HashMap<u64, String>>),
     GetDevMapping(Sender<Vec<QueryDevResponseBody>>),
+    GetAoeMapping(Sender<HashMap<u64, u64>>),
     // 退出数据库服务
     Quit,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct AoeMapping {
+    pub sid: u64,
+    pub nid: u64,
 }
 
 struct ParserManager {
@@ -43,7 +52,7 @@ impl ParserManager {
         let mut opts = rocksdb::Options::default();
         opts.create_if_missing(true);
         opts.create_missing_column_families(true);
-        let cfs = [POINT_TREE, DEV_TREE];
+        let cfs = [POINT_TREE, DEV_TREE, AOE_TREE];
         if let Ok(inner_db) = DB::open_cf(&opts, file_path, cfs) {
             Some(ParserManager { inner_db })
         } else {
@@ -92,7 +101,7 @@ impl ParserManager {
                 log::info!("end parse transports.json");
                 log::info!("start parse aoes.json");
                 match self.parse_aoes(file_name_aoes, &points_mapping, current_id).await {
-                    Ok(()) => {},
+                    Ok(_) => {},
                     Err(err) => {
                         log::error!("{err}");
                         result.result = false;
@@ -130,6 +139,11 @@ impl ParserManager {
                 }
             }
             ParserOperation::GetPointMapping(_sender) => {
+            }
+            ParserOperation::GetAoeMapping(sender) => {
+                if let Err(e) = sender.send(self.query_aoe_mapping()).await {
+                    warn!("!!Failed to send get aoe_mapping : {e:?}");
+                }
             }
             ParserOperation::GetDevMapping(sender) => {
                 if let Err(e) = sender.send(self.query_dev_mapping()).await {
@@ -192,8 +206,9 @@ impl ParserManager {
             // 反序列化为对象
             match serde_json::from_reader(reader) {
                 Ok(aoes) => {
-                    let new_aoes= aoes_to_south(aoes, &points_mapping, current_id)?;
+                    let (new_aoes, aoes_mapping) = aoes_to_south(aoes, &points_mapping, current_id)?;
                     let _ = update_aoes(new_aoes).await?;
+                    self.save_aoe_mapping(&aoes_mapping);
                     Ok(())
                 },
                 Err(err) => Err(format!("策略JSON反序列化失败：{err}"))
@@ -214,6 +229,30 @@ impl ParserManager {
             info!("insert point mapping success");
         } else {
             warn!("!!Failed to insert point mapping");
+        }
+    }
+
+    fn query_aoe_mapping(&self) -> HashMap<u64, u64> {
+        let aoes: Vec<AoeMapping> = query_values_cbor_with_tree_name(&self.inner_db, AOE_TREE);
+        let mut map = HashMap::with_capacity(aoes.len());
+        for aoe in aoes {
+            map.insert(aoe.sid, aoe.nid);
+        }
+        map
+    }
+
+    fn save_aoe_mapping(&self, aoes_mapping: &HashMap<u64, u64>) {
+        let aoes = aoes_mapping.iter().map(|(k, v)|{
+            AoeMapping {
+                sid: *k,
+                nid: *v,
+            }
+        if save_items_cbor_to_db_with_tree_name(&self.inner_db, AOE_TREE, &aoes, |aoe| {
+            aoe.sid.to_string().as_bytes().to_vec()
+        }) {
+            info!("insert aoe_mapping success");
+        } else {
+            warn!("!!Failed to insert aoe_mapping");
         }
     }
 
@@ -309,11 +348,25 @@ async fn get_dev_mapping(
     HttpResponse::RequestTimeout().finish()
 }
 
+#[get("/api/v1/parser/aoe_mapping")]
+async fn get_aoe_mapping(
+    sender: web::Data<Sender<ParserOperation>>,
+) -> HttpResponse {
+    let (tx, rx) = bounded(1);
+    if let Ok(()) = sender.send(ParserOperation::GetAoeMapping(tx)).await {
+        if let Ok(r) = rx.recv().await {
+            return HttpResponse::Ok().content_type("application/json").json(r);
+        }
+    }
+    HttpResponse::RequestTimeout().finish()
+}
+
 pub fn config_parser_web_service(cfg: &mut web::ServiceConfig) {
     // 开放控制接口
     cfg.service(update_json)
     .service(get_point_mapping)
-    .service(get_dev_mapping);
+    .service(get_dev_mapping)
+    .service(get_aoe_mapping);
 }
 
 async fn query_dev(transports: &MyTransports) -> Result<Vec<QueryDevResponseBody>, String> {

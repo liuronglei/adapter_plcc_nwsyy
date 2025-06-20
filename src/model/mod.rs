@@ -304,9 +304,10 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
     Ok((transports_result, current_tid))
 }
 
-pub fn aoes_to_south(aoes: MyAoes, points_mapping: &HashMap<String, u64>, current_id: u64) -> Result<Vec<AoeModel>, String> {
+pub fn aoes_to_south(aoes: MyAoes, points_mapping: &HashMap<String, u64>, current_id: u64) -> Result<(Vec<AoeModel>, HashMap<u64, u64>), String> {
     let aoes = replace_point_for_aoe(aoes, points_mapping)?;
     let mut aoes_result = vec![];
+    let mut aoes_mapping = HashMap::new();
     let mut current_id = current_id;
     for a in aoes.aoes {
         current_id = current_id + 1;
@@ -323,8 +324,9 @@ pub fn aoes_to_south(aoes: MyAoes, points_mapping: &HashMap<String, u64>, curren
             variables,
         };
         aoes_result.push(aoe);
+        aoes_mapping.insert(current_id, a.id);
     }
-    Ok(aoes_result)
+    Ok((aoes_result, aoes_mapping))
 }
 
 fn trigger_type_to_south(north: MyTriggerType) -> Result<TriggerType, String> {
