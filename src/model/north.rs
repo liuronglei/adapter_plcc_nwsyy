@@ -107,6 +107,18 @@ pub struct MyMeasurement {
     pub is_soe: bool,
     /// 默认值存储在8个字节，需要根据is_discrete来转换成具体的值
     pub init_value: u64,
+    /// 测点描述
+    pub desc: String,
+    pub param: PointParam,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct PointParam {
+    pub action: String,
+    pub timeout: String,
+    #[serde(rename = "type")]
+    pub mtype: String,
+    pub mode: String,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]

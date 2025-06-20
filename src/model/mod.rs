@@ -25,9 +25,10 @@ pub struct ParserResult {
     pub err: String,
 }
 
-pub fn points_to_south(points: MyPoints) -> Result<(Vec<Measurement>, HashMap<String, u64>), String> {
+pub fn points_to_south(points: MyPoints) -> Result<(Vec<Measurement>, HashMap<String, u64>, HashMap<String, PointParam>), String> {
     let mut points_result = vec![];
     let mut mapping_result = HashMap::new();
+    let mut point_param = HashMap::new();
     let mut current_pid = 100000_u64;
     let mut points = points.points;
     points.sort_by_key(|m| m.is_computing_point);
@@ -64,19 +65,20 @@ pub fn points_to_south(points: MyPoints) -> Result<(Vec<Measurement>, HashMap<St
             is_realtime: p.is_realtime,
             is_soe: p.is_soe,
             init_value: p.init_value,
-            desc: "".to_string(),
+            desc: p.desc,
             is_remote: false,
         });
         if !p.point_id.is_empty() {
-            mapping_result.insert(p.point_id, current_pid);
+            mapping_result.insert(p.point_id.clone(), current_pid);
         } else if !expression.is_empty() {
             mapping_result.insert(expression, current_pid);
         }
+        point_param.insert(p.point_id, p.param);
     }
-    Ok((points_result, mapping_result))
+    Ok((points_result, mapping_result, point_param))
 }
 
-pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<String, u64>, dev_guids: &HashMap<String, String>) -> Result<(Vec<Transport>, u64), String> {
+pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<String, u64>, dev_guids: &HashMap<String, String>, point_param: &HashMap<String, PointParam>) -> Result<(Vec<Transport>, u64), String> {
     let env = Env::get_env(ADAPTER_NAME);
     let mqtt_broker = (env.get_mqtt_server(), env.get_mqtt_server_port());
     let new_transport = MyMqttTransportJoin::from_vec(transports.transports)?;
@@ -181,9 +183,14 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
                     filter_keys_yk.push(vec!["dev".to_string()]);
                     filter_values_yk.push(Some(vec![str_to_json_value("0")]));
                     let pid = *points_mapping.get(v).unwrap();
+                    let (action, timeout, mtype, mode) = if let Some(param) = point_param.get(v) {
+                        (param.action.clone(), param.timeout.clone(), param.mtype.clone(), param.mode.clone())
+                    } else {
+                        ("1".to_string(), "30".to_string(), "SCO".to_string(), "1".to_string())
+                    };
                     json_write_template_yk.insert(
                         pid,
-                        format!("{{\"token\": \"plcc_yk\",\"time\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"name\": \"{tag}\",\"type\": \"SCO\",\"cmd\": \"0\",\"action\": \"1\",\"mode\": \"0\",\"timeout\": \"10\"}}]}}")
+                        format!("{{\"token\": \"plcc_yk\",\"time\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"name\": \"{tag}\",\"type\": \"{mtype}\",\"cmd\": \"0\",\"action\": \"{action}\",\"mode\": \"{mode}\",\"timeout\": \"{timeout}\"}}]}}")
                     );
                     json_write_tag_yk.insert(
                         pid,

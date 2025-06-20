@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use crate::db::mydb;
 use crate::model::datacenter::QueryDevResponseBody;
 use crate::ADAPTER_NAME;
-use crate::model::north::MyTransports;
-use crate::model::{ParserResult, points_to_south, transports_to_south, aoes_to_south};
+use crate::model::north::{MyTransports, PointParam};
+use crate::model::{ParserResult, points_to_south, transports_to_south, aoes_to_south,};
 use crate::utils::plccapi::{update_points, update_transports, update_aoes, do_reset};
 use crate::utils::mqttclient::{do_query_dev, do_data_query};
 use crate::db::dbutils::*;
@@ -80,6 +80,7 @@ impl ParserManager {
                 let file_name_transports = format!("{json_dir}/{transport_dir}");
                 let file_name_aoes = format!("{json_dir}/{aoe_dir}");
                 let mut points_mapping: HashMap<String, u64> = HashMap::default();
+                let mut point_param: HashMap<String, PointParam> = HashMap::default();
                 let mut result = ParserResult{
                     result: true,
                     err: "".to_string()
@@ -87,7 +88,10 @@ impl ParserManager {
                 let mut current_id = 65535_u64;
                 log::info!("start parse point.json");
                 match self.parse_points(file_name_points).await {
-                    Ok(mapping) => points_mapping = mapping,
+                    Ok((mapping, param)) => {
+                        points_mapping = mapping;
+                        point_param = param;
+                    },
                     Err(err) => {
                         log::error!("{err}");
                         result.result = false;
@@ -96,7 +100,7 @@ impl ParserManager {
                 }
                 log::info!("end parse point.json");
                 log::info!("start parse transports.json");
-                match self.parse_transports(file_name_transports, &points_mapping).await {
+                match self.parse_transports(file_name_transports, &points_mapping, &point_param).await {
                     Ok(id) => current_id = id,
                     Err(err) => {
                         log::error!("{err}");
@@ -163,17 +167,17 @@ impl ParserManager {
         }
     }
 
-    async fn parse_points(&self, path: String) -> Result<HashMap<String, u64>, String> {
+    async fn parse_points(&self, path: String) -> Result<(HashMap<String, u64>, HashMap<String, PointParam>), String> {
         // 打开文件
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
             // 反序列化为对象
             match serde_json::from_reader(reader) {
                 Ok(points) => {
-                    let (new_points, points_mapping) = points_to_south(points)?;
+                    let (new_points, points_mapping, point_param) = points_to_south(points)?;
                     let _ = update_points(new_points).await?;
                     self.save_point_mapping(&points_mapping);
-                    Ok(points_mapping)
+                    Ok((points_mapping, point_param))
                 },
                 Err(err) => Err(format!("测点JSON反序列化失败：{err}"))
             }
@@ -182,7 +186,7 @@ impl ParserManager {
         }
     }
 
-    async fn parse_transports(&self, path: String, points_mapping: &HashMap<String, u64>) -> Result<u64, String> {
+    async fn parse_transports(&self, path: String, points_mapping: &HashMap<String, u64>, point_param: &HashMap<String, PointParam>) -> Result<u64, String> {
         // 打开文件
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
@@ -195,7 +199,7 @@ impl ParserManager {
                         (v.devID.clone(), v.guid.clone().unwrap_or("".to_string()))
                     }).collect::<HashMap<String, String>>();
                     log::info!("end do dev_guid mqtt");
-                    let (new_transports, current_id) = transports_to_south(transports, &points_mapping, &dev_guids)?;
+                    let (new_transports, current_id) = transports_to_south(transports, points_mapping, &dev_guids, point_param)?;
                     let _ = update_transports(new_transports).await?;
                     self.delete_all_dev_mapping();
                     self.save_dev_mapping(&devs);
