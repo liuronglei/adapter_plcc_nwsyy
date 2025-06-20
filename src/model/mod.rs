@@ -25,14 +25,22 @@ pub struct ParserResult {
     pub err: String,
 }
 
-pub fn points_to_south(points: MyPoints) -> Result<(Vec<Measurement>, Vec<(String, u64)>), String> {
+pub fn points_to_south(points: MyPoints) -> Result<(Vec<Measurement>, HashMap<String, u64>), String> {
     let mut points_result = vec![];
-    let mut mapping_result = vec![];
+    let mut mapping_result = HashMap::new();
     let mut current_pid = 100000_u64;
-    for p in points.points {
+    let mut points = points.points;
+    points.sort_by_key(|m| m.is_computing_point);
+    // 再用测点映射替换计算点的公式
+    for p in points {
         let unit = DataUnit::from_str(p.data_unit.as_str()).unwrap_or(DataUnit::Unknown);
         let alarm_level1 = Expr::from_str(p.alarm_level1_expr.as_str()).ok();
         let alarm_level2 = Expr::from_str(p.alarm_level2_expr.as_str()).ok();
+        let expression = if p.is_computing_point {
+            replace_point(&p.expression, &mapping_result)?
+        } else {
+            p.expression
+        };
         current_pid = current_pid + 1;
         points_result.push(Measurement {
             point_id: current_pid,
@@ -40,7 +48,7 @@ pub fn points_to_south(points: MyPoints) -> Result<(Vec<Measurement>, Vec<(Strin
             alias_id: p.alias_id,
             is_discrete: p.is_discrete,
             is_computing_point: p.is_computing_point,
-            expression: p.expression,
+            expression: expression.clone(),
             trans_expr: p.trans_expr,
             inv_trans_expr: p.inv_trans_expr,
             change_expr: p.change_expr,
@@ -59,7 +67,11 @@ pub fn points_to_south(points: MyPoints) -> Result<(Vec<Measurement>, Vec<(Strin
             desc: "".to_string(),
             is_remote: false,
         });
-        mapping_result.push((p.point_id, current_pid));
+        if !p.point_id.is_empty() {
+            mapping_result.insert(p.point_id, current_pid);
+        } else if !expression.is_empty() {
+            mapping_result.insert(expression, current_pid);
+        }
     }
     Ok((points_result, mapping_result))
 }
@@ -393,7 +405,7 @@ fn actions_to_south(aoe_id: u64, north: Vec<MyActionEdge>) -> Result<Vec<ActionE
     let mut actions = vec![];
     for action_n in north {
         let action = match action_n.action {
-            MyEigAction::None => EigAction::None,
+            MyEigAction::None(_) => EigAction::None,
             MyEigAction::SetPoints(my_set_points) => EigAction::SetPoints(get_set_points(my_set_points)?),
             MyEigAction::SetPointsWithCheck(my_set_points) => EigAction::SetPointsWithCheck(get_set_points(my_set_points)?),
             MyEigAction::SetPoints2(my_set_points) => EigAction::SetPoints2(get_set_points2(my_set_points)?),
@@ -600,7 +612,7 @@ fn replace_point_for_aoe(aoes: MyAoes, points_mapping: &HashMap<String, u64>) ->
         let mut new_actions = vec![];
         for mut edge in aoe.actions.clone() {
             let new_action = match edge.action {
-                MyEigAction::None => MyEigAction::None,
+                MyEigAction::None(str) => MyEigAction::None(str),
                 MyEigAction::SetPoints(my_set_points) => MyEigAction::SetPoints(replace_point_for_set_points(my_set_points, points_mapping)?),
                 MyEigAction::SetPointsWithCheck(my_set_points) => MyEigAction::SetPointsWithCheck(replace_point_for_set_points(my_set_points, points_mapping)?),
                 MyEigAction::SetPoints2(my_set_points) => MyEigAction::SetPoints2(replace_point_for_set_points(my_set_points, points_mapping)?),

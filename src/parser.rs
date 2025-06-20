@@ -26,7 +26,7 @@ pub const OPERATION_RECEIVE_BUFF_NUM: usize = 100;
 
 pub enum ParserOperation {
     UpdateJson(Sender<ParserResult>),
-    GetPointMapping(Sender<HashMap<u64, String>>),
+    GetPointMapping(Sender<HashMap<String, u64>>),
     GetDevMapping(Sender<Vec<QueryDevResponseBody>>),
     GetAoeMapping(Sender<HashMap<u64, u64>>),
     // 退出数据库服务
@@ -37,6 +37,12 @@ pub enum ParserOperation {
 pub struct AoeMapping {
     pub sid: u64,
     pub nid: u64,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct PointMapping {
+    pub sid: u64,
+    pub nid: String,
 }
 
 struct ParserManager {
@@ -81,7 +87,7 @@ impl ParserManager {
                 let mut current_id = 65535_u64;
                 log::info!("start parse point.json");
                 match self.parse_points(file_name_points).await {
-                    Ok(mapping) => points_mapping = mapping.into_iter().collect(),
+                    Ok(mapping) => points_mapping = mapping,
                     Err(err) => {
                         log::error!("{err}");
                         result.result = false;
@@ -138,7 +144,10 @@ impl ParserManager {
                     warn!("!!Failed to send update json : {e:?}");
                 }
             }
-            ParserOperation::GetPointMapping(_sender) => {
+            ParserOperation::GetPointMapping(sender) => {
+                if let Err(e) = sender.send(self.query_point_mapping()).await {
+                    warn!("!!Failed to send get aoe_mapping : {e:?}");
+                }
             }
             ParserOperation::GetAoeMapping(sender) => {
                 if let Err(e) = sender.send(self.query_aoe_mapping()).await {
@@ -154,7 +163,7 @@ impl ParserManager {
         }
     }
 
-    async fn parse_points(&self, path: String) -> Result<Vec<(String, u64)>, String> {
+    async fn parse_points(&self, path: String) -> Result<HashMap<String, u64>, String> {
         // 打开文件
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
@@ -218,17 +227,28 @@ impl ParserManager {
         }
     }
 
-    fn save_point_mapping(&self, points_mapping: &Vec<(String, u64)>) {
-        let mut keys = Vec::with_capacity(points_mapping.len());
-        let mut values = Vec::with_capacity(points_mapping.len());
-        for (ptag, pid) in points_mapping {
-            keys.push(ptag.as_bytes().to_vec());
-            values.push(pid.to_string().as_bytes().to_vec());
+    fn query_point_mapping(&self) -> HashMap<String, u64> {
+        let points: Vec<PointMapping> = query_values_cbor_with_tree_name(&self.inner_db, POINT_TREE);
+        let mut map = HashMap::with_capacity(points.len());
+        for point in points {
+            map.insert(point.nid, point.sid);
         }
-        if save_items_to_db_with_tree_name(&self.inner_db, POINT_TREE, &keys, &values) {
-            info!("insert point mapping success");
+        map
+    }
+
+    fn save_point_mapping(&self, points_mapping: &HashMap<String, u64>) {
+        let points = points_mapping.iter().map(|(k, v)|{
+            PointMapping {
+                sid: *v,
+                nid: k.to_string(),
+            }
+        }).collect::<Vec<PointMapping>>();
+        if save_items_cbor_to_db_with_tree_name(&self.inner_db, POINT_TREE, &points, |point| {
+            point.nid.as_bytes().to_vec()
+        }) {
+            info!("insert point_mapping success");
         } else {
-            warn!("!!Failed to insert point mapping");
+            warn!("!!Failed to insert point_mapping");
         }
     }
 

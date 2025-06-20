@@ -154,7 +154,7 @@ pub struct MyActionEdge {
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum MyEigAction {
     /// 无动作
-    None,
+    None(String),
     /// 设点动作
     SetPoints(MySetPoints),
     /// 设点动作
