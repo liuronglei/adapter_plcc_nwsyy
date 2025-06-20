@@ -81,6 +81,7 @@ impl ParserManager {
                 let file_name_aoes = format!("{json_dir}/{aoe_dir}");
                 let mut points_mapping: HashMap<String, u64> = HashMap::default();
                 let mut point_param: HashMap<String, PointParam> = HashMap::default();
+                let mut point_discrete: HashMap<String, bool> = HashMap::default();
                 let mut result = ParserResult{
                     result: true,
                     err: "".to_string()
@@ -88,9 +89,10 @@ impl ParserManager {
                 let mut current_id = 65535_u64;
                 log::info!("start parse point.json");
                 match self.parse_points(file_name_points).await {
-                    Ok((mapping, param)) => {
+                    Ok((mapping, param, discrete)) => {
                         points_mapping = mapping;
                         point_param = param;
+                        point_discrete = discrete;
                     },
                     Err(err) => {
                         log::error!("{err}");
@@ -100,7 +102,7 @@ impl ParserManager {
                 }
                 log::info!("end parse point.json");
                 log::info!("start parse transports.json");
-                match self.parse_transports(file_name_transports, &points_mapping, &point_param).await {
+                match self.parse_transports(file_name_transports, &points_mapping, &point_param, &point_discrete).await {
                     Ok(id) => current_id = id,
                     Err(err) => {
                         log::error!("{err}");
@@ -167,17 +169,17 @@ impl ParserManager {
         }
     }
 
-    async fn parse_points(&self, path: String) -> Result<(HashMap<String, u64>, HashMap<String, PointParam>), String> {
+    async fn parse_points(&self, path: String) -> Result<(HashMap<String, u64>, HashMap<String, PointParam>, HashMap<String, bool>), String> {
         // 打开文件
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
             // 反序列化为对象
             match serde_json::from_reader(reader) {
                 Ok(points) => {
-                    let (new_points, points_mapping, point_param) = points_to_south(points)?;
+                    let (new_points, points_mapping, point_param, point_discrete) = points_to_south(points)?;
                     let _ = update_points(new_points).await?;
                     self.save_point_mapping(&points_mapping);
-                    Ok((points_mapping, point_param))
+                    Ok((points_mapping, point_param, point_discrete))
                 },
                 Err(err) => Err(format!("测点JSON反序列化失败：{err}"))
             }
@@ -186,7 +188,7 @@ impl ParserManager {
         }
     }
 
-    async fn parse_transports(&self, path: String, points_mapping: &HashMap<String, u64>, point_param: &HashMap<String, PointParam>) -> Result<u64, String> {
+    async fn parse_transports(&self, path: String, points_mapping: &HashMap<String, u64>, point_param: &HashMap<String, PointParam>, point_discrete: &HashMap<String, bool>) -> Result<u64, String> {
         // 打开文件
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
@@ -199,7 +201,7 @@ impl ParserManager {
                         (v.devID.clone(), v.guid.clone().unwrap_or("".to_string()))
                     }).collect::<HashMap<String, String>>();
                     log::info!("end do dev_guid mqtt");
-                    let (new_transports, current_id) = transports_to_south(transports, points_mapping, &dev_guids, point_param)?;
+                    let (new_transports, current_id) = transports_to_south(transports, points_mapping, &dev_guids, point_param, point_discrete)?;
                     let _ = update_transports(new_transports).await?;
                     self.delete_all_dev_mapping();
                     self.save_dev_mapping(&devs);

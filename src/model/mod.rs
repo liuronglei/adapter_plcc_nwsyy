@@ -25,10 +25,11 @@ pub struct ParserResult {
     pub err: String,
 }
 
-pub fn points_to_south(points: MyPoints) -> Result<(Vec<Measurement>, HashMap<String, u64>, HashMap<String, PointParam>), String> {
+pub fn points_to_south(points: MyPoints) -> Result<(Vec<Measurement>, HashMap<String, u64>, HashMap<String, PointParam>, HashMap<String, bool>), String> {
     let mut points_result = vec![];
     let mut mapping_result = HashMap::new();
     let mut point_param = HashMap::new();
+    let mut point_discrete = HashMap::new();
     let mut current_pid = 100000_u64;
     let mut points = points.points;
     points.sort_by_key(|m| m.is_computing_point);
@@ -69,6 +70,7 @@ pub fn points_to_south(points: MyPoints) -> Result<(Vec<Measurement>, HashMap<St
             is_remote: false,
         });
         if !p.point_id.is_empty() {
+            point_discrete.insert(p.point_id.clone(), p.is_discrete);
             mapping_result.insert(p.point_id.clone(), current_pid);
         } else if !expression.is_empty() {
             mapping_result.insert(expression, current_pid);
@@ -77,10 +79,13 @@ pub fn points_to_south(points: MyPoints) -> Result<(Vec<Measurement>, HashMap<St
            point_param.insert(p.point_id, param);
         }
     }
-    Ok((points_result, mapping_result, point_param))
+    Ok((points_result, mapping_result, point_param, point_discrete))
 }
 
-pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<String, u64>, dev_guids: &HashMap<String, String>, point_param: &HashMap<String, PointParam>) -> Result<(Vec<Transport>, u64), String> {
+pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<String, u64>,
+        dev_guids: &HashMap<String, String>,
+        point_param: &HashMap<String, PointParam>,
+        point_discrete: &HashMap<String, bool>) -> Result<(Vec<Transport>, u64), String> {
     let env = Env::get_env(ADAPTER_NAME);
     let mqtt_broker = (env.get_mqtt_server(), env.get_mqtt_server_port());
     let new_transport = MyMqttTransportJoin::from_vec(transports.transports)?;
@@ -160,13 +165,19 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
                     filter_keys_yt.push(vec!["dev".to_string()]);
                     filter_values_yt.push(Some(vec![str_to_json_value("0")]));
                     let pid = *points_mapping.get(v).unwrap();
+                    let is_discrete = if let Some(is_discrete) = point_discrete.get(v) {
+                        *is_discrete
+                    } else {
+                        false
+                    };
+                    let datatype = if is_discrete {"int"} else {"float"};
                     json_write_template_yt.insert(
                         pid,
-                        format!("{{\"token\": \"plcc_yt\",\"time\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"body\": [{{\"name\": \"{tag}\",\"val\": \"\",\"unit\": \"\",\"datatype\": \"\"}}]}}]}}")
+                        format!("{{\"token\": \"plcc_yt\",\"timestamp\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"timeout\": \"60\",\"body\": [{{\"name\": \"{tag}\",\"val\": \"\",\"unit\": \"\",\"datatype\": \"{datatype}\"}}]}}]}}")
                     );
                     json_write_tag_yt.insert(
                         pid,
-                        "body/_array/body/_array/val;time".to_string()
+                        "body/_array/body/_array/val;timestamp".to_string()
                     );
                 }
             }
