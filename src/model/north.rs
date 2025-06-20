@@ -109,7 +109,7 @@ pub struct MyMeasurement {
     pub init_value: u64,
     /// 测点描述
     pub desc: String,
-    pub param: PointParam,
+    pub param: Option<PointParam>,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]

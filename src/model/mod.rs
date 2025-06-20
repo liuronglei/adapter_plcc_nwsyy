@@ -73,7 +73,9 @@ pub fn points_to_south(points: MyPoints) -> Result<(Vec<Measurement>, HashMap<St
         } else if !expression.is_empty() {
             mapping_result.insert(expression, current_pid);
         }
-        point_param.insert(p.point_id, p.param);
+        if let Some(param) = p.param {
+           point_param.insert(p.point_id, param);
+        }
     }
     Ok((points_result, mapping_result, point_param))
 }
