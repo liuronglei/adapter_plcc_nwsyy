@@ -114,11 +114,11 @@ pub struct MyMeasurement {
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct PointParam {
-    pub action: String,
-    pub timeout: String,
+    pub action: Option<String>,
+    pub timeout: Option<String>,
     #[serde(rename = "type")]
-    pub mtype: String,
-    pub mode: String,
+    pub mtype: Option<String>,
+    pub mode: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
