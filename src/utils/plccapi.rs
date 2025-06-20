@@ -405,7 +405,11 @@ async fn do_aoe_upload(client: &AsyncClient, topic_request_update: &str, topic_r
                 aoe_action_result_to_north(action_result.clone(), &points_mapping).ok()
             }).collect::<Vec<MyPbActionResult>>();
             let aoe_id = if let Some(sid) = a.aoe_id {
-                aoe_mapping.get(&sid).copied()
+                if let Some(nid) = aoe_mapping.get(&sid) {
+                    Some(nid.to_string())
+                } else {
+                    None
+                }
             } else {
                 None
             };

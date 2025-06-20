@@ -246,7 +246,7 @@ impl MyTransport {
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Default, Debug)]
 pub struct MyPbAoeResult {
-    pub aoe_id: Option<u64>,
+    pub aoe_id: Option<String>,
     pub start_time: Option<u64>,
     pub end_time: Option<u64>,
     pub event_results: Vec<crate::model::south::PbEventResult>,
