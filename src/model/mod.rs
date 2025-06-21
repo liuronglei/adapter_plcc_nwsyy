@@ -80,9 +80,9 @@ pub fn points_to_south(points: MyPoints, old_point_mapping: &HashMap<String, u64
         });
         if !p.point_id.is_empty() {
             point_discrete.insert(p.point_id.clone(), p.is_discrete);
-            mapping_result.insert(p.point_id.clone(), current_pid);
+            mapping_result.insert(p.point_id.clone(), point_id);
         } else if !expression.is_empty() {
-            mapping_result.insert(expression, current_pid);
+            mapping_result.insert(expression, point_id);
         }
         if let Some(param) = p.param {
            point_param.insert(p.point_id, param);

@@ -98,7 +98,7 @@ impl ParserManager {
                     Err(err) => {
                         log::error!("{err}");
                         result.result = false;
-                        let new_err = if result.err.is_empty() {err} else {format!(";{err}")};
+                        let new_err = if result.err.is_empty() {err} else {format!("；{err}")};
                         result.err.push_str(&new_err);
                     }
                 }
@@ -109,7 +109,7 @@ impl ParserManager {
                     Err(err) => {
                         log::error!("{err}");
                         result.result = false;
-                        let new_err = if result.err.is_empty() {err} else {format!(";{err}")};
+                        let new_err = if result.err.is_empty() {err} else {format!("；{err}")};
                         result.err.push_str(&new_err);
                     }
                 }
@@ -120,7 +120,7 @@ impl ParserManager {
                     Err(err) => {
                         log::error!("{err}");
                         result.result = false;
-                        let new_err = if result.err.is_empty() {err} else {format!(";{err}")};
+                        let new_err = if result.err.is_empty() {err} else {format!("；{err}")};
                         result.err.push_str(&new_err);
                     }
                 }
@@ -131,7 +131,7 @@ impl ParserManager {
                     Err(err) => {
                         log::error!("{err}");
                         result.result = false;
-                        let new_err = if result.err.is_empty() {err} else {format!(";{err}")};
+                        let new_err = if result.err.is_empty() {err} else {format!("；{err}")};
                         result.err.push_str(&new_err);
                     }
                 }
@@ -144,7 +144,7 @@ impl ParserManager {
                     Err(err) => {
                         log::error!("{err}");
                         result.result = false;
-                        let new_err = if result.err.is_empty() {err} else {format!(";{err}")};
+                        let new_err = if result.err.is_empty() {err} else {format!("；{err}")};
                         result.err.push_str(&new_err);
                     },
                 }
