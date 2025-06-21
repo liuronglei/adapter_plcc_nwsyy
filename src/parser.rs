@@ -79,16 +79,17 @@ impl ParserManager {
                 let file_name_points = format!("{json_dir}/{point_dir}");
                 let file_name_transports = format!("{json_dir}/{transport_dir}");
                 let file_name_aoes = format!("{json_dir}/{aoe_dir}");
+                let old_point_mapping = self.query_point_mapping();
                 let mut points_mapping: HashMap<String, u64> = HashMap::default();
                 let mut point_param: HashMap<String, PointParam> = HashMap::default();
                 let mut point_discrete: HashMap<String, bool> = HashMap::default();
-                let mut result = ParserResult{
+                let mut result = ParserResult {
                     result: true,
                     err: "".to_string()
                 };
                 let mut current_id = 65535_u64;
                 log::info!("start parse point.json");
-                match self.parse_points(file_name_points).await {
+                match self.parse_points(file_name_points, &old_point_mapping).await {
                     Ok((mapping, param, discrete)) => {
                         points_mapping = mapping;
                         point_param = param;
@@ -97,7 +98,8 @@ impl ParserManager {
                     Err(err) => {
                         log::error!("{err}");
                         result.result = false;
-                        result.err = err;
+                        let new_err = if result.err.is_empty() {err} else {format!(";{err}")};
+                        result.err.push_str(&new_err);
                     }
                 }
                 log::info!("end parse point.json");
@@ -107,7 +109,8 @@ impl ParserManager {
                     Err(err) => {
                         log::error!("{err}");
                         result.result = false;
-                        result.err = err;
+                        let new_err = if result.err.is_empty() {err} else {format!(";{err}")};
+                        result.err.push_str(&new_err);
                     }
                 }
                 log::info!("end parse transports.json");
@@ -117,7 +120,8 @@ impl ParserManager {
                     Err(err) => {
                         log::error!("{err}");
                         result.result = false;
-                        result.err = err;
+                        let new_err = if result.err.is_empty() {err} else {format!(";{err}")};
+                        result.err.push_str(&new_err);
                     }
                 }
                 log::info!("end parse aoes.json");
@@ -127,7 +131,8 @@ impl ParserManager {
                     Err(err) => {
                         log::error!("{err}");
                         result.result = false;
-                        result.err = err;
+                        let new_err = if result.err.is_empty() {err} else {format!(";{err}")};
+                        result.err.push_str(&new_err);
                     }
                 }
                 log::info!("end do reset");
@@ -139,7 +144,8 @@ impl ParserManager {
                     Err(err) => {
                         log::error!("{err}");
                         result.result = false;
-                        result.err = err;
+                        let new_err = if result.err.is_empty() {err} else {format!(";{err}")};
+                        result.err.push_str(&new_err);
                     },
                 }
                 log::info!("end do query_data mqtt");
@@ -169,16 +175,16 @@ impl ParserManager {
         }
     }
 
-    async fn parse_points(&self, path: String) -> Result<(HashMap<String, u64>, HashMap<String, PointParam>, HashMap<String, bool>), String> {
+    async fn parse_points(&self, path: String, old_point_mapping: &HashMap<String, u64>) -> Result<(HashMap<String, u64>, HashMap<String, PointParam>, HashMap<String, bool>), String> {
         // 打开文件
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
             // 反序列化为对象
             match serde_json::from_reader(reader) {
                 Ok(points) => {
-                    let (new_points, points_mapping, point_param, point_discrete) = points_to_south(points)?;
+                    let (new_points, points_mapping, point_param, point_discrete) = points_to_south(points, old_point_mapping)?;
                     let _ = update_points(new_points).await?;
-                    self.save_point_mapping(&points_mapping);
+                    self.replace_point_mapping(old_point_mapping, &points_mapping);
                     Ok((points_mapping, point_param, point_discrete))
                 },
                 Err(err) => Err(format!("测点JSON反序列化失败：{err}"))
@@ -256,6 +262,15 @@ impl ParserManager {
         } else {
             warn!("!!Failed to insert point_mapping");
         }
+    }
+
+    fn replace_point_mapping(&self, old_mapping: &HashMap<String, u64>, new_mapping: &HashMap<String, u64>) {
+        delete_items_by_keys_with_tree_name(
+            &self.inner_db,
+            POINT_TREE,
+            old_mapping.keys().map(|id| id.to_string().as_bytes().to_vec()).collect(),
+        );
+        self.save_point_mapping(new_mapping);
     }
 
     fn query_aoe_mapping(&self) -> HashMap<u64, u64> {

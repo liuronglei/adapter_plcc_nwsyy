@@ -25,15 +25,19 @@ pub struct ParserResult {
     pub err: String,
 }
 
-pub fn points_to_south(points: MyPoints) -> Result<(Vec<Measurement>, HashMap<String, u64>, HashMap<String, PointParam>, HashMap<String, bool>), String> {
+pub fn points_to_south(points: MyPoints, old_point_mapping: &HashMap<String, u64>) -> Result<(Vec<Measurement>, HashMap<String, u64>, HashMap<String, PointParam>, HashMap<String, bool>), String> {
     let mut points_result = vec![];
     let mut mapping_result = HashMap::new();
     let mut point_param = HashMap::new();
     let mut point_discrete = HashMap::new();
-    let mut current_pid = 100000_u64;
     let mut points = points.points;
+    let mut current_pid = if let Some(max_point) = old_point_mapping.values().copied().max() {
+        max_point
+    } else {
+        100000_u64
+    };
+    // 排序，先普通测点，后计算测点，避免计算公式替换的时候所引用的测点还未创建
     points.sort_by_key(|m| m.is_computing_point);
-    // 再用测点映射替换计算点的公式
     for p in points {
         let unit = DataUnit::from_str(p.data_unit.as_str()).unwrap_or(DataUnit::Unknown);
         let alarm_level1 = Expr::from_str(p.alarm_level1_expr.as_str()).ok();
@@ -43,9 +47,14 @@ pub fn points_to_south(points: MyPoints) -> Result<(Vec<Measurement>, HashMap<St
         } else {
             p.expression
         };
-        current_pid = current_pid + 1;
+        let point_id = if let Some(pid) = old_point_mapping.get(&p.point_id) {
+            *pid
+        } else {
+            current_pid = current_pid + 1;
+            current_pid
+        };
         points_result.push(Measurement {
-            point_id: current_pid,
+            point_id,
             point_name: p.point_name,
             alias_id: p.alias_id,
             is_discrete: p.is_discrete,
@@ -121,7 +130,7 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
     let mut current_tid = 65536_u64;
     for (dev_id, (point_ycyx, point_yt, point_yk)) in new_transport.dev_ids_map.iter() {
         if !dev_guids.contains_key(dev_id) {
-            return Err(format!("找不到设备GUID：{dev_id}"));
+            return Err(format!("通道解析失败，找不到设备GUID：{dev_id}"));
         }
         let dev_guid = dev_guids.get(dev_id).unwrap();
         let points = point_ycyx.iter()
@@ -384,20 +393,20 @@ fn variables_to_south(north: Vec<(String, String)>) -> Result<Vec<(String, Expr)
                 for token in &var_name_expr.rpn {
                     match token {
                         Token::Var(n) => var_name = n.clone(),
-                        _ => return Err(format!("解析错误：{var_name}")),
+                        _ => return Err(format!("策略变量名解析错误：{var_name}")),
                     }
                 }
             } else {
-                return Err(format!("解析错误：{var_name}"));
+                return Err(format!("策略变量名解析错误：{var_name}"));
             }
         }
         // 检查是否重复变量定义
         for (vari, _) in &variables {
             if vari.eq(&var_name) {
-                return Err(format!("变量重复：{var_name}"));
+                return Err(format!("策略变量名重复：{var_name}"));
             }
         }
-        let init_v: Expr = id_to_value.1.parse().map_err(|_| format!("解析错误：{var_name}"))?;
+        let init_v: Expr = id_to_value.1.parse().map_err(|_| format!("策略变量值解析错误：{var_name}"))?;
         variables.push((var_name, init_v));
     }
     Ok(variables)
@@ -407,9 +416,9 @@ fn events_to_south(aoe_id: u64, north: Vec<MyEventNode>) -> Result<Vec<EventNode
     let mut events = vec![];
     for event_n in north {
         let expr_n = event_n.expr;
-        let expr: Expr = expr_n.parse().map_err(|_| format!("解析错误：{expr_n}"))?;
+        let expr: Expr = expr_n.parse().map_err(|_| format!("策略事件公式解析错误：{expr_n}"))?;
         if !expr.check_validity() {
-            return Err(format!("公式不可用：{expr_n}"));
+            return Err(format!("策略event公式不可用：{expr_n}"));
         }
         let event_s = EventNode {
             id: event_n.id,
@@ -456,11 +465,11 @@ fn actions_to_south(aoe_id: u64, north: Vec<MyActionEdge>) -> Result<Vec<ActionE
 fn get_set_points(my_set_points: MySetPoints) -> Result<SetPoints, String> {
     let discrete_id = my_set_points.discretes.keys().cloned().collect();
     let discrete_v = my_set_points.discretes.values().map(|v| {
-        v.parse().map_err(|_| format!("解析错误：{v}"))
+        v.parse().map_err(|_| format!("策略动作解析错误：{v}"))
     }).collect::<Result<_, _>>()?;
     let analog_id = my_set_points.analogs.keys().cloned().collect();
     let analog_v = my_set_points.analogs.values().map(|v| {
-        v.parse().map_err(|_| format!("解析错误：{v}"))
+        v.parse().map_err(|_| format!("策略动作解析错误：{v}"))
     }).collect::<Result<_, _>>()?;
     Ok(SetPoints {
         discrete_id,
@@ -473,9 +482,9 @@ fn get_set_points(my_set_points: MySetPoints) -> Result<SetPoints, String> {
 fn get_set_points2(my_set_points: MySetPoints) -> Result<SetPoints2, String> {
     let discretes = my_set_points.discretes.iter().map(|(k, v)| {
         let ids = k.split(";").map(|v| v.to_string()).collect::<Vec<String>>();
-        let expr: Expr = v.parse().map_err(|_| format!("解析错误：{v}"))?;
+        let expr: Expr = v.parse().map_err(|_| format!("策略动作解析错误：{v}"))?;
         if !expr.check_validity() {
-            return Err(format!("公式不可用：{v}"));
+            return Err(format!("策略动作公式不可用：{v}"));
         }
         Ok(PointsToExp {
             ids,
@@ -484,9 +493,9 @@ fn get_set_points2(my_set_points: MySetPoints) -> Result<SetPoints2, String> {
     }).collect::<Result<_, _>>()?;
     let analogs = my_set_points.analogs.iter().map(|(k, v)| {
         let ids = k.split(";").map(|v| v.to_string()).collect::<Vec<String>>();
-        let expr: Expr = v.parse().map_err(|_| format!("解析错误：{v}"))?;
+        let expr: Expr = v.parse().map_err(|_| format!("策略动作解析错误：{v}"))?;
         if !expr.check_validity() {
-            return Err(format!("公式不可用：{v}"));
+            return Err(format!("策略动作公式不可用：{v}"));
         }
         Ok(PointsToExp {
             ids,
@@ -502,7 +511,7 @@ fn get_set_points2(my_set_points: MySetPoints) -> Result<SetPoints2, String> {
 fn get_sparse_solver(my_solver: MySolver) -> Result<SparseSolver, String> {
     let expr_ori= my_solver.f;
     if expr_ori.is_empty() {
-        return Err("公式不能为空".to_string());
+        return Err("策略动作公式不能为空".to_string());
     }
     let expr_str: Vec<&str> = expr_ori.split(';').collect();
     let para_str = my_solver.parameters.iter().map(|(k, v)|format!("{k}:{v}")).collect::<Vec<String>>();
@@ -515,7 +524,7 @@ fn get_sparse_solver(my_solver: MySolver) -> Result<SparseSolver, String> {
             } else {
                 para_str[line - 1]
             };
-            Err(format!("公式解析错误：{line},{err_str}"))
+            Err(format!("策略动作公式解析错误：{line},{err_str}"))
         }
     }
 }
@@ -523,7 +532,7 @@ fn get_sparse_solver(my_solver: MySolver) -> Result<SparseSolver, String> {
 fn get_newton_solver(my_solver: MySolver) -> Result<NewtonSolver, String> {
     let expr_ori= my_solver.f;
     if expr_ori.is_empty() {
-        return Err("公式不能为空".to_string());
+        return Err("策略动作公式不能为空".to_string());
     }
     let expr_str: Vec<&str> = expr_ori.split(';').collect();
     let para_str = my_solver.parameters.iter().map(|(k, v)|format!("{k}:{v}")).collect::<Vec<String>>();
@@ -536,7 +545,7 @@ fn get_newton_solver(my_solver: MySolver) -> Result<NewtonSolver, String> {
             } else {
                 para_str[line - 1]
             };
-            Err(format!("公式解析错误：{line},{err_str}"))
+            Err(format!("策略动作公式解析错误：{line},{err_str}"))
         }
     }
 }
@@ -544,7 +553,7 @@ fn get_newton_solver(my_solver: MySolver) -> Result<NewtonSolver, String> {
 fn get_milp(my_programming: MyProgramming) -> Result<SparseMILP, String> {
     let mut expr_ori= my_programming.f;
     if expr_ori.is_empty() {
-        return Err("公式不能为空".to_string());
+        return Err("策略动作公式不能为空".to_string());
     }
     let constraint = my_programming.constraint;
     if !constraint.is_empty() {
@@ -561,7 +570,7 @@ fn get_milp(my_programming: MyProgramming) -> Result<SparseMILP, String> {
             } else {
                 para_str[line - 1]
             };
-            Err(format!("公式解析错误：{line},{err_str}"))
+            Err(format!("策略动作公式解析错误：{line},{err_str}"))
         }
     }
 }
@@ -569,7 +578,7 @@ fn get_milp(my_programming: MyProgramming) -> Result<SparseMILP, String> {
 fn get_simple_milp(my_programming: MyProgramming) -> Result<MILP, String> {
     let mut expr_ori= my_programming.f;
     if expr_ori.is_empty() {
-        return Err("公式不能为空".to_string());
+        return Err("策略动作公式不能为空".to_string());
     }
     let constraint = my_programming.constraint;
     if !constraint.is_empty() {
@@ -586,7 +595,7 @@ fn get_simple_milp(my_programming: MyProgramming) -> Result<MILP, String> {
             } else {
                 para_str[line - 1]
             };
-            Err(format!("公式解析错误：{line},{err_str}"))
+            Err(format!("策略动作公式解析错误：{line},{err_str}"))
         }
     }
 }
@@ -594,7 +603,7 @@ fn get_simple_milp(my_programming: MyProgramming) -> Result<MILP, String> {
 fn get_nlp(my_programming: MyProgramming) -> Result<NLP, String> {
     let mut expr_ori= my_programming.f;
     if expr_ori.is_empty() {
-        return Err("公式不能为空".to_string());
+        return Err("策略动作公式不能为空".to_string());
     }
     let constraint = my_programming.constraint;
     if !constraint.is_empty() {
@@ -611,7 +620,7 @@ fn get_nlp(my_programming: MyProgramming) -> Result<NLP, String> {
             } else {
                 para_str[line - 1]
             };
-            Err(format!("公式解析错误：{line},{err_str}"))
+            Err(format!("策略动作公式解析错误：{line},{err_str}"))
         }
     }
 }
