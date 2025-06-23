@@ -139,10 +139,10 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
         point_ycyx_ids.extend(points);
         for v in point_ycyx.iter() {
             if points_mapping.contains_key(v) {
-                let mut value_map = HashMap::with_capacity(1);
-                value_map.insert("val".to_string(), point_index_ycyx);
-                json_tags_ycyx.insert(format!("[{point_index_ycyx}]"), value_map);
                 if let Some(tag) = get_north_tag(v) {
+                    let mut value_map = HashMap::with_capacity(1);
+                    value_map.insert("val".to_string(), point_index_ycyx);
+                    json_tags_ycyx.insert(format!("[{point_index_ycyx}]"), value_map);
                     filter_keys_ycyx.push(vec![
                         "body/_array/name".to_string(),
                         "body/_array/quality".to_string(),
@@ -157,9 +157,9 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
                         "body/_array/body/_array/quality".to_string(),
                         "body/_array/dev".to_string()
                     ]);
+                    point_index_ycyx = point_index_ycyx + 1;
                 }
             }
-            point_index_ycyx = point_index_ycyx + 1;
         }
         let points = point_yt.iter()
             .filter(|v|points_mapping.contains_key(*v))
@@ -188,9 +188,9 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
                         pid,
                         "body/_array/body/_array/val;timestamp".to_string()
                     );
+                    point_yt_index = point_yt_index + 1;
                 }
             }
-            point_yt_index = point_yt_index + 1;
         }
         let points = point_yk.iter()
             .filter(|v|points_mapping.contains_key(*v))
@@ -221,9 +221,9 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
                         pid,
                         "body/_array/cmd;time".to_string()
                     );
+                    point_yk_index = point_yk_index + 1;
                 }
             }
-            point_yk_index = point_yk_index + 1;
         }
     }
     // 遥测遥信通道

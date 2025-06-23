@@ -400,7 +400,7 @@ fn generate_register_model(model: String) -> RegisterModel {
 fn generate_register_app(model: String) -> RegisterApp {
     let body = RegisterAPPBody {
         model,
-        port: "".to_string(),
+        port: "NULL".to_string(),
         addr: "000000".to_string(),
         desc: "terminal".to_string(),
         manuID: "".to_string(),
