@@ -260,13 +260,13 @@ impl ParserManager {
                     Ok(())
                 },
                 Err(err) => Err(AdapterErr {
-                    code: ErrCode::TransportJsonDeserializeErr,
+                    code: ErrCode::AoeJsonDeserializeErr,
                     msg: format!("策略JSON反序列化失败：{err}"),
                 })
             }
         } else {
             Err(AdapterErr {
-                code: ErrCode::TransportJsonNotFound,
+                code: ErrCode::AoeJsonNotFound,
                 msg: "策略JSON文件不存在".to_string(),
             })
         }
