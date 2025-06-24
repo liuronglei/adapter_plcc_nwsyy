@@ -1,3 +1,4 @@
+use core::f64;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::time::Duration;
@@ -66,8 +67,8 @@ pub fn points_to_south(points: MyPoints, old_point_mapping: &HashMap<String, u64
             zero_expr: p.zero_expr,
             data_unit: p.data_unit,
             unit,
-            upper_limit: p.upper_limit,
-            lower_limit: p.lower_limit,
+            upper_limit: p.upper_limit.unwrap_or(f64::MAX),
+            lower_limit: p.lower_limit.unwrap_or(f64::MIN),
             alarm_level1_expr: p.alarm_level1_expr,
             alarm_level1,
             alarm_level2_expr: p.alarm_level2_expr,

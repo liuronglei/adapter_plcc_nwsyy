@@ -94,9 +94,9 @@ pub struct MyMeasurement {
     /// 单位
     pub data_unit: String,
     /// 上限，用于坏数据辨识
-    pub upper_limit: f64,
+    pub upper_limit: Option<f64>,
     /// 下限，用于坏数据辨识
-    pub lower_limit: f64,
+    pub lower_limit: Option<f64>,
     /// 告警级别1的表达式
     pub alarm_level1_expr: String,
     /// 告警级别2的表达式
