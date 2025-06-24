@@ -14,8 +14,7 @@ use crate::model::north::{MyPbAoeResult, MyPbActionResult};
 use crate::utils::mqttclient::{client_publish, generate_aoe_update, generate_aoe_set, query_register_dev};
 use crate::utils::point_param_map;
 use crate::utils::localapi::query_aoe_mapping;
-use crate::{URL_LOGIN, URL_POINTS, URL_TRANSPORTS,
-    URL_AOES, URL_AOE_RESULTS, URL_RESET, ADAPTER_NAME};
+use crate::{AdapterErr, ErrCode, ADAPTER_NAME, URL_AOES, URL_AOE_RESULTS, URL_LOGIN, URL_POINTS, URL_RESET, URL_TRANSPORTS};
 use crate::env::Env;
 
 const PASSWORD_V_KEY: &[u8] = b"zju-plcc";
@@ -23,7 +22,7 @@ const HEADER_TOKEN: &str = "access-token";
 
 type HmacSha256 = Hmac<Sha256>;
 
-pub async fn update_points(points: Vec<Measurement>) -> Result<(), String> {
+pub async fn update_points(points: Vec<Measurement>) -> Result<(), AdapterErr> {
     let token = login().await?;
     let old_points = query_points(token.clone()).await?;
     let pids = old_points.iter().map(|v| v.point_id).collect::<Vec<u64>>();
@@ -33,7 +32,7 @@ pub async fn update_points(points: Vec<Measurement>) -> Result<(), String> {
     save_points(token, points).await
 }
 
-pub async fn update_transports(transports: Vec<Transport>) -> Result<(), String> {
+pub async fn update_transports(transports: Vec<Transport>) -> Result<(), AdapterErr> {
     let token = login().await?;
     let old_transports = query_transports(token.clone()).await?;
     let tids = old_transports.iter().map(|v| v.id()).collect::<Vec<u64>>();
@@ -43,7 +42,7 @@ pub async fn update_transports(transports: Vec<Transport>) -> Result<(), String>
     save_transports(token, transports).await
 }
 
-pub async fn update_aoes(aoes: Vec<AoeModel>) -> Result<(), String> {
+pub async fn update_aoes(aoes: Vec<AoeModel>) -> Result<(), AdapterErr> {
     let token = login().await?;
     let old_aoes = query_aoes(token.clone()).await?;
     let aids = old_aoes.iter().map(|v| v.id).collect::<Vec<u64>>();
@@ -53,12 +52,12 @@ pub async fn update_aoes(aoes: Vec<AoeModel>) -> Result<(), String> {
     save_aoes(token, aoes).await
 }
 
-pub async fn do_reset() -> Result<(), String> {
+pub async fn do_reset() -> Result<(), AdapterErr> {
     let token = login().await?;
     reset(token).await
 }
 
-async fn delete_points(token: String, ids: Vec<u64>) -> Result<(), String> {
+async fn delete_points(token: String, ids: Vec<u64>) -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let url = format!("{plcc_server}/{URL_POINTS}");
@@ -72,14 +71,20 @@ async fn delete_points(token: String, ids: Vec<u64>) -> Result<(), String> {
         if response.status() == StatusCode::OK {
             Ok(())
         } else {
-            Err("调用测点API删除测点失败".to_string())
+            Err(AdapterErr {
+                code: ErrCode::PlccConnectErr,
+                msg: "调用测点API删除测点失败".to_string(),
+            })
         }
     } else {
-        Err("连接PLCC失败".to_string())
+        Err(AdapterErr {
+            code: ErrCode::PlccConnectErr,
+            msg: "连接PLCC失败".to_string(),
+        })
     }
 }
 
-async fn query_points(token: String) -> Result<Vec<Measurement>, String> {
+async fn query_points(token: String) -> Result<Vec<Measurement>, AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let url = format!("{plcc_server}/{URL_POINTS}");
@@ -92,14 +97,20 @@ async fn query_points(token: String) -> Result<Vec<Measurement>, String> {
         if let Ok(points) = response.json::<Vec<Measurement>>().await {
             Ok(points)
         } else {
-            Err("调用测点API获取测点失败".to_string())
+            Err(AdapterErr {
+                code: ErrCode::PlccConnectErr,
+                msg: "调用测点API获取测点失败".to_string(),
+            })
         }
     } else {
-        Err("连接PLCC失败".to_string())
+        Err(AdapterErr {
+            code: ErrCode::PlccConnectErr,
+            msg: "连接PLCC失败".to_string(),
+        })
     }
 }
 
-async fn save_points(token: String, points: Vec<Measurement>) -> Result<(), String> {
+async fn save_points(token: String, points: Vec<Measurement>) -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let url = format!("{plcc_server}/{URL_POINTS}");
@@ -113,14 +124,20 @@ async fn save_points(token: String, points: Vec<Measurement>) -> Result<(), Stri
         if response.status() == StatusCode::OK {
             Ok(())
         } else {
-            Err("调用测点API新增测点失败".to_string())
+            Err(AdapterErr {
+                code: ErrCode::PlccConnectErr,
+                msg: "调用测点API新增测点失败".to_string(),
+            })
         }
     } else {
-        Err("连接PLCC失败".to_string())
+        Err(AdapterErr {
+            code: ErrCode::PlccConnectErr,
+            msg: "连接PLCC失败".to_string(),
+        })
     }
 }
 
-async fn delete_transports(token: String, ids: Vec<u64>) -> Result<(), String> {
+async fn delete_transports(token: String, ids: Vec<u64>) -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let ids = ids.iter()
@@ -138,14 +155,20 @@ async fn delete_transports(token: String, ids: Vec<u64>) -> Result<(), String> {
         if response.status() == StatusCode::OK {
             Ok(())
         } else {
-            Err("调用通道API删除通道失败".to_string())
+            Err(AdapterErr {
+                code: ErrCode::PlccConnectErr,
+                msg: "调用通道API删除通道失败".to_string(),
+            })
         }
     } else {
-        Err("连接PLCC失败".to_string())
+        Err(AdapterErr {
+            code: ErrCode::PlccConnectErr,
+            msg: "连接PLCC失败".to_string(),
+        })
     }
 }
 
-async fn query_transports(token: String) -> Result<Vec<Transport>, String> {
+async fn query_transports(token: String) -> Result<Vec<Transport>, AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let url = format!("{plcc_server}/{URL_TRANSPORTS}");
@@ -158,14 +181,20 @@ async fn query_transports(token: String) -> Result<Vec<Transport>, String> {
         if let Ok(transports) = response.json::<Vec<Transport>>().await {
             Ok(transports)
         } else {
-            Err("调用通道API获取通道失败".to_string())
+            Err(AdapterErr {
+                code: ErrCode::PlccConnectErr,
+                msg: "调用通道API获取通道失败".to_string(),
+            })
         }
     } else {
-        Err("连接PLCC失败".to_string())
+        Err(AdapterErr {
+            code: ErrCode::PlccConnectErr,
+            msg: "连接PLCC失败".to_string(),
+        })
     }
 }
 
-async fn save_transports(token: String, transports: Vec<Transport>) -> Result<(), String> {
+async fn save_transports(token: String, transports: Vec<Transport>) -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let url = format!("{plcc_server}/{URL_TRANSPORTS}");
@@ -179,14 +208,20 @@ async fn save_transports(token: String, transports: Vec<Transport>) -> Result<()
         if response.status() == StatusCode::OK {
             Ok(())
         } else {
-            Err("调用通道API新增通道失败".to_string())
+            Err(AdapterErr {
+                code: ErrCode::PlccConnectErr,
+                msg: "调用通道API新增通道失败".to_string(),
+            })
         }
     } else {
-        Err("连接PLCC失败".to_string())
+        Err(AdapterErr {
+            code: ErrCode::PlccConnectErr,
+            msg: "连接PLCC失败".to_string(),
+        })
     }
 }
 
-async fn delete_aoes(token: String, ids: Vec<u64>) -> Result<(), String> {
+async fn delete_aoes(token: String, ids: Vec<u64>) -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let ids = ids.iter()
@@ -204,14 +239,20 @@ async fn delete_aoes(token: String, ids: Vec<u64>) -> Result<(), String> {
         if response.status() == StatusCode::OK {
             Ok(())
         } else {
-            Err("调用策略API删除策略失败".to_string())
+            Err(AdapterErr {
+                code: ErrCode::PlccConnectErr,
+                msg: "调用策略API删除策略失败".to_string(),
+            })
         }
     } else {
-        Err("连接PLCC失败".to_string())
+        Err(AdapterErr {
+            code: ErrCode::PlccConnectErr,
+            msg: "连接PLCC失败".to_string(),
+        })
     }
 }
 
-async fn query_aoes(token: String) -> Result<Vec<AoeModel>, String> {
+async fn query_aoes(token: String) -> Result<Vec<AoeModel>, AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let url = format!("{plcc_server}/{URL_AOES}");
@@ -224,14 +265,20 @@ async fn query_aoes(token: String) -> Result<Vec<AoeModel>, String> {
         if let Ok(aoes) = response.json::<Vec<AoeModel>>().await {
             Ok(aoes)
         } else {
-            Err("调用策略API获取策略失败".to_string())
+            Err(AdapterErr {
+                code: ErrCode::PlccConnectErr,
+                msg: "调用策略API获取策略失败".to_string(),
+            })
         }
     } else {
-        Err("连接PLCC失败".to_string())
+        Err(AdapterErr {
+            code: ErrCode::PlccConnectErr,
+            msg: "连接PLCC失败".to_string(),
+        })
     }
 }
 
-async fn save_aoes(token: String, aoes: Vec<AoeModel>) -> Result<(), String> {
+async fn save_aoes(token: String, aoes: Vec<AoeModel>) -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let url = format!("{plcc_server}/{URL_AOES}");
@@ -245,14 +292,20 @@ async fn save_aoes(token: String, aoes: Vec<AoeModel>) -> Result<(), String> {
         if response.status() == StatusCode::OK {
             Ok(())
         } else {
-            Err("调用策略API新增策略失败".to_string())
+            Err(AdapterErr {
+                code: ErrCode::PlccConnectErr,
+                msg: "调用策略API新增策略失败".to_string(),
+            })
         }
     } else {
-        Err("连接PLCC失败".to_string())
+        Err(AdapterErr {
+            code: ErrCode::PlccConnectErr,
+            msg: "连接PLCC失败".to_string(),
+        })
     }
 }
 
-async fn login() -> Result<String, String> {
+async fn login() -> Result<String, AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let plcc_user = env.get_plcc_user();
     let plcc_pwd = env.get_plcc_pwd();
@@ -280,12 +333,18 @@ async fn login() -> Result<String, String> {
                     "未知错误".to_string()
                 }
             };
-            Err(error)
+            Err(AdapterErr {
+                code: ErrCode::PlccConnectErr,
+                msg: error,
+            })
         } else {
             Ok(token)
         }
     } else {
-        Err("连接PLCC失败".to_string())
+        Err(AdapterErr {
+            code: ErrCode::PlccConnectErr,
+            msg: "_PLCC登录失败".to_string(),
+        })
     }
 }
 
@@ -305,7 +364,7 @@ fn get_header(token: String) -> HeaderMap {
     headers
 }
 
-async fn reset(token: String) -> Result<(), String> {
+async fn reset(token: String) -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let url = format!("{plcc_server}/{URL_RESET}");
@@ -318,23 +377,29 @@ async fn reset(token: String) -> Result<(), String> {
         if response.status() == StatusCode::OK {
             Ok(())
         } else {
-            Err("调用重置API失败".to_string())
+            Err(AdapterErr {
+                code: ErrCode::PlccConnectErr,
+                msg: "调用重置API失败".to_string(),
+            })
         }
     } else {
-        Err("连接PLCC失败".to_string())
+        Err(AdapterErr {
+            code: ErrCode::PlccConnectErr,
+            msg: "连接PLCC失败".to_string(),
+        })
     }
 }
 
-pub async fn aoe_result_upload() -> Result<(), String> {
+pub async fn aoe_result_upload() -> Result<(), AdapterErr> {
     tokio::spawn(async {
         if let Err(e) = aoe_upload_loop().await {
-            log::error!("do aoe_result_upload error: {}", e);
+            log::error!("do aoe_result_upload error: {}", e.msg);
         }
     });
     Ok(())
 }
 
-async fn aoe_upload_loop() -> Result<(), String> {
+async fn aoe_upload_loop() -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
@@ -376,12 +441,12 @@ async fn aoe_upload_loop() -> Result<(), String> {
         }
         count += 1;
         if let Err(e) = do_aoe_upload(&client, &topic_request_update, &topic_request_set, &token, &mut last_time, &app_model).await {
-            log::error!("do aoe_result_upload error: {}", e);
+            log::error!("do aoe_result_upload error: {}", e.msg);
         }
     }
 }
 
-async fn do_aoe_upload(client: &AsyncClient, topic_request_update: &str, topic_request_set: &str, token: &str, last_time: &mut HashMap<u64, u64>, app_model: &str) -> Result<(), String> {
+async fn do_aoe_upload(client: &AsyncClient, topic_request_update: &str, topic_request_set: &str, token: &str, last_time: &mut HashMap<u64, u64>, app_model: &str) -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let app_name = env.get_app_name();
     let my_aoes = query_aoes(token.to_string()).await?;
@@ -435,7 +500,7 @@ async fn do_aoe_upload(client: &AsyncClient, topic_request_update: &str, topic_r
     Ok(())
 }
 
-async fn query_aoe_result(token: String, ids: Vec<u64>) -> Result<PbAoeResults, String> {
+async fn query_aoe_result(token: String, ids: Vec<u64>) -> Result<PbAoeResults, AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let ids = ids.iter()
@@ -454,12 +519,18 @@ async fn query_aoe_result(token: String, ids: Vec<u64>) -> Result<PbAoeResults, 
             if let Ok(aoe_results) = response.json::<PbAoeResults>().await {
                 Ok(aoe_results)
             } else {
-                Err("调用策略执行结果API获取测点失败".to_string())
+                Err(AdapterErr {
+                    code: ErrCode::PlccConnectErr,
+                    msg: "调用策略执行结果API获取测点失败".to_string(),
+                })
             }
         },
         Err(ee) => {
             log::error!("link to plcc error: {:?}", ee);
-            Err(format!("连接PLCC失败：{:?}", ee))
+            Err(AdapterErr {
+                code: ErrCode::PlccConnectErr,
+                msg: format!("连接PLCC失败：{:?}", ee),
+            })
         }
     }
 }

@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::{AdapterErr, ErrCode};
+
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct MyTransports {
     pub transports: Vec<MyTransport>,
@@ -29,9 +31,12 @@ pub struct MyMqttTransportJoin {
 }
 
 impl MyMqttTransportJoin {
-    pub fn from_vec(transports: Vec<MyTransport>) -> Result<Self, String> {
+    pub fn from_vec(transports: Vec<MyTransport>) -> Result<Self, AdapterErr> {
         if transports.is_empty() {
-            return Err("通道为空".to_string());
+            return Err(AdapterErr {
+                code: ErrCode::TransportIsEmpty,
+                msg: "通道列表不能为空".to_string(),
+            });
         }
         let mut name = "".to_string();
         let mut dev_ids_map = HashMap::new();

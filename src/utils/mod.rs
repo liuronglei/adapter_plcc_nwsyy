@@ -9,9 +9,12 @@ pub mod context;
 pub mod mqttclient;
 pub mod point_param_map;
 pub mod param_point_map;
+pub mod register_result;
 pub mod log_init;
 
 use regex::Regex;
+
+use crate::{AdapterErr, ErrCode};
 
 pub fn get_north_tag(north_point: &str) -> Option<String> {
     let re = Regex::new(r"\$\{([^}]+)\}").unwrap();
@@ -24,7 +27,7 @@ pub fn get_north_tag(north_point: &str) -> Option<String> {
     None
 }
 
-fn do_replace_point(input: &str, points_mapping: &HashMap<String, u64>, without_prefix: bool) -> Result<String, String> {
+fn do_replace_point(input: &str, points_mapping: &HashMap<String, u64>, without_prefix: bool) -> Result<String, AdapterErr> {
     let re = Regex::new(r"\$\{([^}]+)\}").unwrap();
     let (mut is_success, mut err_str) = (true, "".to_string());
     let point = re.replace_all(input, |caps: &regex::Captures| {
@@ -45,15 +48,18 @@ fn do_replace_point(input: &str, points_mapping: &HashMap<String, u64>, without_
     if is_success {
         Ok(point)
     } else {
-        Err(format!("测点替换失败：找不到{err_str}对应的测点"))
+        Err(AdapterErr {
+            code: ErrCode::PointUndefined,
+            msg: format!("测点替换失败，使用未定义的测点{err_str}"),
+        })
     }
 }
 
-pub fn replace_point(input: &str, points_mapping: &HashMap<String, u64>) -> Result<String, String> {
+pub fn replace_point(input: &str, points_mapping: &HashMap<String, u64>) -> Result<String, AdapterErr> {
     do_replace_point(input, points_mapping, false)
 }
 
-pub fn replace_point_without_prefix(input: &str, points_mapping: &HashMap<String, u64>) -> Result<String, String> {
+pub fn replace_point_without_prefix(input: &str, points_mapping: &HashMap<String, u64>) -> Result<String, AdapterErr> {
     do_replace_point(input, points_mapping, true)
 }
 
@@ -61,6 +67,6 @@ pub fn get_point_tag(input: &u64, points_mapping: &HashMap<u64, String>) -> Resu
     if let Some(tag) = points_mapping.get(input) {
         Ok(tag.to_string())
     } else {
-        Err(format!("测点替换失败：找不到测点{input}对应的物模型路径"))
+        Err(format!("测点替换失败，找不到测点{input}对应的物模型路径"))
     }
 }

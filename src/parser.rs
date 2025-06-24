@@ -9,13 +9,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::mydb;
 use crate::model::datacenter::QueryDevResponseBody;
-use crate::ADAPTER_NAME;
+use crate::{AdapterErr, ErrCode, ADAPTER_NAME};
 use crate::model::north::{MyTransports, PointParam};
-use crate::model::{ParserResult, points_to_south, transports_to_south, aoes_to_south,};
+use crate::model::{points_to_south, transports_to_south, aoes_to_south,};
 use crate::utils::plccapi::{update_points, update_transports, update_aoes, do_reset};
-use crate::utils::mqttclient::{do_query_dev, do_data_query};
+use crate::utils::mqttclient::{do_query_dev, do_data_query, do_register_sync};
 use crate::db::dbutils::*;
-use crate::utils::{param_point_map, point_param_map};
+use crate::utils::{param_point_map, point_param_map, register_result};
 use crate::env::Env;
 
 const POINT_TREE: &str = "point";
@@ -25,7 +25,7 @@ const DEV_TREE: &str = "dev";
 pub const OPERATION_RECEIVE_BUFF_NUM: usize = 100;
 
 pub enum ParserOperation {
-    UpdateJson(Sender<ParserResult>),
+    UpdateJson(Sender<u16>),
     GetPointMapping(Sender<HashMap<String, u64>>),
     GetDevMapping(Sender<Vec<QueryDevResponseBody>>),
     GetAoeMapping(Sender<HashMap<u64, u64>>),
@@ -83,76 +83,91 @@ impl ParserManager {
                 let mut points_mapping: HashMap<String, u64> = HashMap::default();
                 let mut point_param: HashMap<String, PointParam> = HashMap::default();
                 let mut point_discrete: HashMap<String, bool> = HashMap::default();
-                let mut result = ParserResult {
-                    result: true,
-                    err: "".to_string()
-                };
                 let mut current_id = 65535_u64;
-                log::info!("start parse point.json");
-                match self.parse_points(file_name_points, &old_point_mapping).await {
-                    Ok((mapping, param, discrete)) => {
-                        points_mapping = mapping;
-                        point_param = param;
-                        point_discrete = discrete;
-                    },
-                    Err(err) => {
-                        log::error!("{err}");
-                        result.result = false;
-                        let new_err = if result.err.is_empty() {err} else {format!("；{err}")};
-                        result.err.push_str(&new_err);
+                let mut result_code = ErrCode::Success;
+                let mut has_err = false;
+                if !register_result::get_result() {
+                    log::info!("start do register");
+                    match do_register_sync().await {
+                        Ok(_) => {},
+                        Err(err) => {
+                            log::error!("{}", err.msg);
+                            has_err = true;
+                            result_code = err.code;
+                        }
                     }
+                    log::info!("end do register");
                 }
-                log::info!("end parse point.json");
-                log::info!("start parse transports.json");
-                match self.parse_transports(file_name_transports, &points_mapping, &point_param, &point_discrete).await {
-                    Ok(id) => current_id = id,
-                    Err(err) => {
-                        log::error!("{err}");
-                        result.result = false;
-                        let new_err = if result.err.is_empty() {err} else {format!("；{err}")};
-                        result.err.push_str(&new_err);
+                if !has_err {
+                    log::info!("start parse point.json");
+                    match self.parse_points(file_name_points, &old_point_mapping).await {
+                        Ok((mapping, param, discrete)) => {
+                            points_mapping = mapping;
+                            point_param = param;
+                            point_discrete = discrete;
+                            // 保存到全局变量中
+                            param_point_map::save_all(points_mapping.clone());
+                            point_param_map::save_reversal(points_mapping.clone());
+                        },
+                        Err(err) => {
+                            log::error!("{}", err.msg);
+                            has_err = true;
+                            result_code = err.code;
+                        }
                     }
+                    log::info!("end parse point.json");
                 }
-                log::info!("end parse transports.json");
-                log::info!("start parse aoes.json");
-                match self.parse_aoes(file_name_aoes, &points_mapping, current_id).await {
-                    Ok(_) => {},
-                    Err(err) => {
-                        log::error!("{err}");
-                        result.result = false;
-                        let new_err = if result.err.is_empty() {err} else {format!("；{err}")};
-                        result.err.push_str(&new_err);
+                if !has_err {
+                    log::info!("start parse transports.json");
+                    match self.parse_transports(file_name_transports, &points_mapping, &point_param, &point_discrete).await {
+                        Ok(id) => current_id = id,
+                        Err(err) => {
+                            log::error!("{}", err.msg);
+                            has_err = true;
+                            result_code = err.code;
+                        }
                     }
+                    log::info!("end parse transports.json");
                 }
-                log::info!("end parse aoes.json");
-                log::info!("start do reset");
-                match do_reset().await {
-                    Ok(()) => {},
-                    Err(err) => {
-                        log::error!("{err}");
-                        result.result = false;
-                        let new_err = if result.err.is_empty() {err} else {format!("；{err}")};
-                        result.err.push_str(&new_err);
+                if !has_err {
+                    log::info!("start parse aoes.json");
+                    match self.parse_aoes(file_name_aoes, &points_mapping, current_id).await {
+                        Ok(_) => {},
+                        Err(err) => {
+                            log::error!("{}", err.msg);
+                            has_err = true;
+                            result_code = err.code;
+                        }
                     }
+                    log::info!("end parse aoes.json");
                 }
-                log::info!("end do reset");
-                log::info!("start do query_data mqtt");
-                // 等待2秒
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                match do_data_query().await {
-                    Ok(()) => {},
-                    Err(err) => {
-                        log::error!("{err}");
-                        result.result = false;
-                        let new_err = if result.err.is_empty() {err} else {format!("；{err}")};
-                        result.err.push_str(&new_err);
-                    },
+                if !has_err {
+                    log::info!("start do reset");
+                    match do_reset().await {
+                        Ok(()) => {},
+                        Err(err) => {
+                            log::error!("{}", err.msg);
+                            has_err = true;
+                            result_code = err.code;
+                        }
+                    }
+                    log::info!("end do reset");
                 }
-                log::info!("end do query_data mqtt");
-                // 保存到全局变量中
-                param_point_map::save_all(points_mapping.clone());
-                point_param_map::save_reversal(points_mapping);
-                if let Err(e) = sender.send(result).await {
+                if !has_err {
+                    // 等待5秒
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    log::info!("start do query_data mqtt");
+                    match do_data_query().await {
+                        Ok(()) => {},
+                        Err(err) => {
+                            log::error!("{}", err.msg);
+                            // has_err = true;
+                            result_code = err.code;
+                        },
+                    }
+                    log::info!("end do query_data mqtt");
+                }
+                if let Err(e) = sender.send(result_code as u16).await {
                     warn!("!!Failed to send update json : {e:?}");
                 }
             }
@@ -175,7 +190,7 @@ impl ParserManager {
         }
     }
 
-    async fn parse_points(&self, path: String, old_point_mapping: &HashMap<String, u64>) -> Result<(HashMap<String, u64>, HashMap<String, PointParam>, HashMap<String, bool>), String> {
+    async fn parse_points(&self, path: String, old_point_mapping: &HashMap<String, u64>) -> Result<(HashMap<String, u64>, HashMap<String, PointParam>, HashMap<String, bool>), AdapterErr> {
         // 打开文件
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
@@ -187,14 +202,20 @@ impl ParserManager {
                     self.replace_point_mapping(old_point_mapping, &points_mapping);
                     Ok((points_mapping, point_param, point_discrete))
                 },
-                Err(err) => Err(format!("测点JSON反序列化失败：{err}"))
+                Err(err) => Err(AdapterErr {
+                    code: ErrCode::PointJsonDeserializeErr,
+                    msg: format!("测点JSON反序列化失败：{err}"),
+                })
             }
         } else {
-            Err("测点JSON文件不存在".to_string())
+            Err(AdapterErr {
+                code: ErrCode::PointJsonNotFound,
+                msg: "测点JSON文件不存在".to_string(),
+            })
         }
     }
 
-    async fn parse_transports(&self, path: String, points_mapping: &HashMap<String, u64>, point_param: &HashMap<String, PointParam>, point_discrete: &HashMap<String, bool>) -> Result<u64, String> {
+    async fn parse_transports(&self, path: String, points_mapping: &HashMap<String, u64>, point_param: &HashMap<String, PointParam>, point_discrete: &HashMap<String, bool>) -> Result<u64, AdapterErr> {
         // 打开文件
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
@@ -213,14 +234,20 @@ impl ParserManager {
                     self.save_dev_mapping(&devs);
                     Ok(current_id)
                 },
-                Err(err) => Err(format!("通道JSON反序列化失败：{err}"))
+                Err(err) => Err(AdapterErr {
+                    code: ErrCode::TransportJsonDeserializeErr,
+                    msg: format!("通道JSON反序列化失败：{err}"),
+                })
             }
         } else {
-            Err("通道JSON文件不存在".to_string())
+            Err(AdapterErr {
+                code: ErrCode::TransportJsonNotFound,
+                msg: "通道JSON文件不存在".to_string(),
+            })
         }
     }
 
-    async fn parse_aoes(&self, path: String, points_mapping: &HashMap<String, u64>, current_id: u64) -> Result<(), String> {
+    async fn parse_aoes(&self, path: String, points_mapping: &HashMap<String, u64>, current_id: u64) -> Result<(), AdapterErr> {
         // 打开文件
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
@@ -232,10 +259,16 @@ impl ParserManager {
                     self.save_aoe_mapping(&aoes_mapping);
                     Ok(())
                 },
-                Err(err) => Err(format!("策略JSON反序列化失败：{err}"))
+                Err(err) => Err(AdapterErr {
+                    code: ErrCode::TransportJsonDeserializeErr,
+                    msg: format!("策略JSON反序列化失败：{err}"),
+                })
             }
         } else {
-            Err("策略JSON文件不存在".to_string())
+            Err(AdapterErr {
+                code: ErrCode::TransportJsonNotFound,
+                msg: "策略JSON文件不存在".to_string(),
+            })
         }
     }
 
@@ -411,9 +444,12 @@ pub fn config_parser_web_service(cfg: &mut web::ServiceConfig) {
     .service(get_aoe_mapping);
 }
 
-async fn query_dev(transports: &MyTransports) -> Result<Vec<QueryDevResponseBody>, String> {
+async fn query_dev(transports: &MyTransports) -> Result<Vec<QueryDevResponseBody>, AdapterErr> {
     if transports.transports.is_empty() {
-        return Err("通道为空".to_string());
+        return Err(AdapterErr {
+            code: ErrCode::TransportIsEmpty,
+            msg: "通道列表不能为空".to_string(),
+        });
     }
     let dev_ids = transports.transports.iter().map(|t|t.dev_id()).collect::<Vec<_>>();
     do_query_dev(dev_ids).await

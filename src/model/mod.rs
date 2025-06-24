@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::time::Duration;
 use std::vec;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use north::MyPoints;
@@ -13,25 +12,25 @@ use south::{DataUnit, Expr};
 use crate::model::north::*;
 use crate::model::south::*;
 use crate::utils::{get_north_tag, replace_point, replace_point_without_prefix, get_point_tag};
-use crate::ADAPTER_NAME;
+use crate::{AdapterErr, ErrCode, ADAPTER_NAME};
 use crate::env::Env;
 
 pub mod north;
 pub mod south;
 pub mod datacenter;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ParserResult {
-    pub result: bool,
-    pub err: String,
-}
-
-pub fn points_to_south(points: MyPoints, old_point_mapping: &HashMap<String, u64>) -> Result<(Vec<Measurement>, HashMap<String, u64>, HashMap<String, PointParam>, HashMap<String, bool>), String> {
+pub fn points_to_south(points: MyPoints, old_point_mapping: &HashMap<String, u64>) -> Result<(Vec<Measurement>, HashMap<String, u64>, HashMap<String, PointParam>, HashMap<String, bool>), AdapterErr> {
+    let mut points = points.points;
+    if points.is_empty() {
+        return Err(AdapterErr {
+            code: ErrCode::PointIsEmpty,
+            msg: "测点列表不能为空".to_string(),
+        });
+    }
     let mut points_result = vec![];
     let mut mapping_result = HashMap::new();
     let mut point_param = HashMap::new();
     let mut point_discrete = HashMap::new();
-    let mut points = points.points;
     let mut current_pid = if let Some(max_point) = old_point_mapping.values().copied().max() {
         max_point
     } else {
@@ -95,7 +94,7 @@ pub fn points_to_south(points: MyPoints, old_point_mapping: &HashMap<String, u64
 pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<String, u64>,
         dev_guids: &HashMap<String, String>,
         point_param: &HashMap<String, PointParam>,
-        point_discrete: &HashMap<String, bool>) -> Result<(Vec<Transport>, u64), String> {
+        point_discrete: &HashMap<String, bool>) -> Result<(Vec<Transport>, u64), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let mqtt_broker = (env.get_mqtt_server(), env.get_mqtt_server_port());
     let new_transport = MyMqttTransportJoin::from_vec(transports.transports)?;
@@ -131,7 +130,10 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
     let mut current_tid = 65536_u64;
     for (dev_id, (point_ycyx, point_yt, point_yk)) in new_transport.dev_ids_map.iter() {
         if !dev_guids.contains_key(dev_id) {
-            return Err(format!("通道解析失败，找不到设备GUID：{dev_id}"));
+            return Err(AdapterErr {
+                code: ErrCode::DevGuidNotFound,
+                msg: format!("通道解析失败，找不到设备GUID：{dev_id}"),
+            });
         }
         let dev_guid = dev_guids.get(dev_id).unwrap();
         let points = point_ycyx.iter()
@@ -159,7 +161,17 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
                         "body/_array/dev".to_string()
                     ]);
                     point_index_ycyx = point_index_ycyx + 1;
+                } else {
+                    return Err(AdapterErr {
+                        code: ErrCode::TransportPointTagErr,
+                        msg: format!("通道解析失败，测点格式错误：{v}"),
+                    });
                 }
+            } else {
+                return Err(AdapterErr {
+                    code: ErrCode::TransportPointNotFound,
+                    msg: format!("通道解析失败，找不到测点：{v}"),
+                });
             }
         }
         let points = point_yt.iter()
@@ -190,7 +202,17 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
                         "body/_array/body/_array/val;timestamp".to_string()
                     );
                     point_yt_index = point_yt_index + 1;
+                } else {
+                    return Err(AdapterErr {
+                        code: ErrCode::TransportPointTagErr,
+                        msg: format!("通道解析失败，测点格式错误：{v}"),
+                    });
                 }
+            } else {
+                return Err(AdapterErr {
+                    code: ErrCode::TransportPointNotFound,
+                    msg: format!("通道解析失败，找不到测点：{v}"),
+                });
             }
         }
         let points = point_yk.iter()
@@ -223,7 +245,17 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
                         "body/_array/cmd;time".to_string()
                     );
                     point_yk_index = point_yk_index + 1;
+                } else {
+                    return Err(AdapterErr {
+                        code: ErrCode::TransportPointTagErr,
+                        msg: format!("通道解析失败，测点格式错误：{v}"),
+                    });
                 }
+            } else {
+                return Err(AdapterErr {
+                    code: ErrCode::TransportPointNotFound,
+                    msg: format!("通道解析失败，找不到测点：{v}"),
+                });
             }
         }
     }
@@ -349,7 +381,7 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
     Ok((transports_result, current_tid))
 }
 
-pub fn aoes_to_south(aoes: MyAoes, points_mapping: &HashMap<String, u64>, current_id: u64) -> Result<(Vec<AoeModel>, HashMap<u64, u64>), String> {
+pub fn aoes_to_south(aoes: MyAoes, points_mapping: &HashMap<String, u64>, current_id: u64) -> Result<(Vec<AoeModel>, HashMap<u64, u64>), AdapterErr> {
     let aoes = replace_point_for_aoe(aoes, points_mapping)?;
     let mut aoes_result = vec![];
     let mut aoes_mapping = HashMap::new();
@@ -374,7 +406,7 @@ pub fn aoes_to_south(aoes: MyAoes, points_mapping: &HashMap<String, u64>, curren
     Ok((aoes_result, aoes_mapping))
 }
 
-fn trigger_type_to_south(north: MyTriggerType) -> Result<TriggerType, String> {
+fn trigger_type_to_south(north: MyTriggerType) -> Result<TriggerType, AdapterErr> {
     match north {
         MyTriggerType::SimpleRepeat(v) => Ok(TriggerType::SimpleRepeat(Duration::from_millis(v))),
         MyTriggerType::TimeDrive(v) => Ok(TriggerType::TimeDrive(v)),
@@ -384,7 +416,7 @@ fn trigger_type_to_south(north: MyTriggerType) -> Result<TriggerType, String> {
     }
 }
 
-fn variables_to_south(north: Vec<(String, String)>) -> Result<Vec<(String, Expr)>, String> {
+fn variables_to_south(north: Vec<(String, String)>) -> Result<Vec<(String, Expr)>, AdapterErr> {
     let mut variables: Vec<(String, Expr)> = vec![];
     for id_to_value in north {
         let mut var_name = id_to_value.0.trim().to_string();
@@ -394,32 +426,51 @@ fn variables_to_south(north: Vec<(String, String)>) -> Result<Vec<(String, Expr)
                 for token in &var_name_expr.rpn {
                     match token {
                         Token::Var(n) => var_name = n.clone(),
-                        _ => return Err(format!("策略变量名解析错误：{var_name}")),
+                        _ => return Err(AdapterErr {
+                            code: ErrCode::AoeVariableErr,
+                            msg: format!("策略变量名解析错误：{var_name}"),
+                        }),
                     }
                 }
             } else {
-                return Err(format!("策略变量名解析错误：{var_name}"));
+                return Err(AdapterErr {
+                    code: ErrCode::AoeVariableErr,
+                    msg: format!("策略变量名解析错误：{var_name}"),
+                });
             }
         }
         // 检查是否重复变量定义
         for (vari, _) in &variables {
             if vari.eq(&var_name) {
-                return Err(format!("策略变量名重复：{var_name}"));
+                return Err(AdapterErr {
+                    code: ErrCode::AoeVariableErr,
+                    msg: format!("策略变量名重复：{var_name}"),
+                });
             }
         }
-        let init_v: Expr = id_to_value.1.parse().map_err(|_| format!("策略变量值解析错误：{var_name}"))?;
+        let var_value = id_to_value.1;
+        let init_v: Expr = var_value.parse().map_err(|_| AdapterErr {
+            code: ErrCode::AoeVariableErr,
+            msg: format!("策略变量值解析错误：{var_value}"),
+        })?;
         variables.push((var_name, init_v));
     }
     Ok(variables)
 }
 
-fn events_to_south(aoe_id: u64, north: Vec<MyEventNode>) -> Result<Vec<EventNode>, String> {
+fn events_to_south(aoe_id: u64, north: Vec<MyEventNode>) -> Result<Vec<EventNode>, AdapterErr> {
     let mut events = vec![];
     for event_n in north {
         let expr_n = event_n.expr;
-        let expr: Expr = expr_n.parse().map_err(|_| format!("策略事件公式解析错误：{expr_n}"))?;
+        let expr: Expr = expr_n.parse().map_err(|_| AdapterErr {
+            code: ErrCode::AoeEventErr,
+            msg: format!("策略事件公式解析错误：{expr_n}"),
+        })?;
         if !expr.check_validity() {
-            return Err(format!("策略event公式不可用：{expr_n}"));
+            return Err(AdapterErr {
+                code: ErrCode::AoeEventErr,
+                msg: format!("策略event公式不可用：{expr_n}"),
+            });
         }
         let event_s = EventNode {
             id: event_n.id,
@@ -434,7 +485,7 @@ fn events_to_south(aoe_id: u64, north: Vec<MyEventNode>) -> Result<Vec<EventNode
     Ok(events)
 }
 
-fn actions_to_south(aoe_id: u64, north: Vec<MyActionEdge>) -> Result<Vec<ActionEdge>, String> {
+fn actions_to_south(aoe_id: u64, north: Vec<MyActionEdge>) -> Result<Vec<ActionEdge>, AdapterErr> {
     let mut actions = vec![];
     for action_n in north {
         let action = match action_n.action {
@@ -463,14 +514,20 @@ fn actions_to_south(aoe_id: u64, north: Vec<MyActionEdge>) -> Result<Vec<ActionE
     Ok(actions)
 }
 
-fn get_set_points(my_set_points: MySetPoints) -> Result<SetPoints, String> {
+fn get_set_points(my_set_points: MySetPoints) -> Result<SetPoints, AdapterErr> {
     let discrete_id = my_set_points.discretes.keys().cloned().collect();
     let discrete_v = my_set_points.discretes.values().map(|v| {
-        v.parse().map_err(|_| format!("策略动作解析错误：{v}"))
+        v.parse().map_err(|_| AdapterErr {
+            code: ErrCode::AoeActionErr,
+            msg: format!("策略动作解析错误：{v}"),
+        })
     }).collect::<Result<_, _>>()?;
     let analog_id = my_set_points.analogs.keys().cloned().collect();
     let analog_v = my_set_points.analogs.values().map(|v| {
-        v.parse().map_err(|_| format!("策略动作解析错误：{v}"))
+        v.parse().map_err(|_| AdapterErr {
+            code: ErrCode::AoeActionErr,
+            msg: format!("策略动作解析错误：{v}"),
+        })
     }).collect::<Result<_, _>>()?;
     Ok(SetPoints {
         discrete_id,
@@ -480,12 +537,18 @@ fn get_set_points(my_set_points: MySetPoints) -> Result<SetPoints, String> {
     })
 }
 
-fn get_set_points2(my_set_points: MySetPoints) -> Result<SetPoints2, String> {
+fn get_set_points2(my_set_points: MySetPoints) -> Result<SetPoints2, AdapterErr> {
     let discretes = my_set_points.discretes.iter().map(|(k, v)| {
         let ids = k.split(";").map(|v| v.to_string()).collect::<Vec<String>>();
-        let expr: Expr = v.parse().map_err(|_| format!("策略动作解析错误：{v}"))?;
+        let expr: Expr = v.parse().map_err(|_| AdapterErr {
+            code: ErrCode::AoeActionErr,
+            msg: format!("策略动作解析错误：{v}"),
+        })?;
         if !expr.check_validity() {
-            return Err(format!("策略动作公式不可用：{v}"));
+            return Err(AdapterErr {
+                code: ErrCode::AoeActionErr,
+                msg: format!("策略动作公式不可用：{v}"),
+            });
         }
         Ok(PointsToExp {
             ids,
@@ -494,9 +557,15 @@ fn get_set_points2(my_set_points: MySetPoints) -> Result<SetPoints2, String> {
     }).collect::<Result<_, _>>()?;
     let analogs = my_set_points.analogs.iter().map(|(k, v)| {
         let ids = k.split(";").map(|v| v.to_string()).collect::<Vec<String>>();
-        let expr: Expr = v.parse().map_err(|_| format!("策略动作解析错误：{v}"))?;
+        let expr: Expr = v.parse().map_err(|_| AdapterErr {
+            code: ErrCode::AoeActionErr,
+            msg: format!("策略动作解析错误：{v}"),
+        })?;
         if !expr.check_validity() {
-            return Err(format!("策略动作公式不可用：{v}"));
+            return Err(AdapterErr {
+                code: ErrCode::AoeActionErr,
+                msg: format!("策略动作公式不可用：{v}"),
+            });
         }
         Ok(PointsToExp {
             ids,
@@ -509,10 +578,13 @@ fn get_set_points2(my_set_points: MySetPoints) -> Result<SetPoints2, String> {
     })
 }
 
-fn get_sparse_solver(my_solver: MySolver) -> Result<SparseSolver, String> {
+fn get_sparse_solver(my_solver: MySolver) -> Result<SparseSolver, AdapterErr> {
     let expr_ori= my_solver.f;
     if expr_ori.is_empty() {
-        return Err("策略动作公式不能为空".to_string());
+        return Err(AdapterErr {
+            code: ErrCode::AoeActionErr,
+            msg: "策略动作公式不能为空".to_string(),
+        })
     }
     let expr_str: Vec<&str> = expr_ori.split(';').collect();
     let para_str = my_solver.parameters.iter().map(|(k, v)|format!("{k}:{v}")).collect::<Vec<String>>();
@@ -525,15 +597,21 @@ fn get_sparse_solver(my_solver: MySolver) -> Result<SparseSolver, String> {
             } else {
                 para_str[line - 1]
             };
-            Err(format!("策略动作公式解析错误：{line},{err_str}"))
+            Err(AdapterErr {
+                code: ErrCode::AoeActionErr,
+                msg: format!("策略动作公式解析错误：{line},{err_str}"),
+            })
         }
     }
 }
 
-fn get_newton_solver(my_solver: MySolver) -> Result<NewtonSolver, String> {
+fn get_newton_solver(my_solver: MySolver) -> Result<NewtonSolver, AdapterErr> {
     let expr_ori= my_solver.f;
     if expr_ori.is_empty() {
-        return Err("策略动作公式不能为空".to_string());
+        return Err(AdapterErr {
+            code: ErrCode::AoeActionErr,
+            msg: "策略动作公式不能为空".to_string(),
+        });
     }
     let expr_str: Vec<&str> = expr_ori.split(';').collect();
     let para_str = my_solver.parameters.iter().map(|(k, v)|format!("{k}:{v}")).collect::<Vec<String>>();
@@ -546,15 +624,21 @@ fn get_newton_solver(my_solver: MySolver) -> Result<NewtonSolver, String> {
             } else {
                 para_str[line - 1]
             };
-            Err(format!("策略动作公式解析错误：{line},{err_str}"))
+            Err(AdapterErr {
+                code: ErrCode::AoeActionErr,
+                msg: format!("策略动作公式解析错误：{line},{err_str}"),
+            })
         }
     }
 }
 
-fn get_milp(my_programming: MyProgramming) -> Result<SparseMILP, String> {
+fn get_milp(my_programming: MyProgramming) -> Result<SparseMILP, AdapterErr> {
     let mut expr_ori= my_programming.f;
     if expr_ori.is_empty() {
-        return Err("策略动作公式不能为空".to_string());
+        return Err(AdapterErr {
+            code: ErrCode::AoeActionErr,
+            msg: "策略动作公式不能为空".to_string(),
+        });
     }
     let constraint = my_programming.constraint;
     if !constraint.is_empty() {
@@ -571,15 +655,21 @@ fn get_milp(my_programming: MyProgramming) -> Result<SparseMILP, String> {
             } else {
                 para_str[line - 1]
             };
-            Err(format!("策略动作公式解析错误：{line},{err_str}"))
+            Err(AdapterErr {
+                code: ErrCode::AoeActionErr,
+                msg: format!("策略动作公式解析错误：{line},{err_str}"),
+            })
         }
     }
 }
 
-fn get_simple_milp(my_programming: MyProgramming) -> Result<MILP, String> {
+fn get_simple_milp(my_programming: MyProgramming) -> Result<MILP, AdapterErr> {
     let mut expr_ori= my_programming.f;
     if expr_ori.is_empty() {
-        return Err("策略动作公式不能为空".to_string());
+        return Err(AdapterErr {
+            code: ErrCode::AoeActionErr,
+            msg: "策略动作公式不能为空".to_string(),
+        });
     }
     let constraint = my_programming.constraint;
     if !constraint.is_empty() {
@@ -596,15 +686,21 @@ fn get_simple_milp(my_programming: MyProgramming) -> Result<MILP, String> {
             } else {
                 para_str[line - 1]
             };
-            Err(format!("策略动作公式解析错误：{line},{err_str}"))
+            Err(AdapterErr {
+                code: ErrCode::AoeActionErr,
+                msg: format!("策略动作公式解析错误：{line},{err_str}"),
+            })
         }
     }
 }
 
-fn get_nlp(my_programming: MyProgramming) -> Result<NLP, String> {
+fn get_nlp(my_programming: MyProgramming) -> Result<NLP, AdapterErr> {
     let mut expr_ori= my_programming.f;
     if expr_ori.is_empty() {
-        return Err("策略动作公式不能为空".to_string());
+        return Err(AdapterErr {
+            code: ErrCode::AoeActionErr,
+            msg: "策略动作公式不能为空".to_string(),
+        });
     }
     let constraint = my_programming.constraint;
     if !constraint.is_empty() {
@@ -621,12 +717,15 @@ fn get_nlp(my_programming: MyProgramming) -> Result<NLP, String> {
             } else {
                 para_str[line - 1]
             };
-            Err(format!("策略动作公式解析错误：{line},{err_str}"))
+            Err(AdapterErr {
+                code: ErrCode::AoeActionErr,
+                msg: format!("策略动作公式解析错误：{line},{err_str}"),
+            })
         }
     }
 }
 
-fn replace_point_for_aoe(aoes: MyAoes, points_mapping: &HashMap<String, u64>) -> Result<MyAoes, String> {
+fn replace_point_for_aoe(aoes: MyAoes, points_mapping: &HashMap<String, u64>) -> Result<MyAoes, AdapterErr> {
     let mut aoes = aoes.aoes;
     for aoe in aoes.iter_mut() {
         let mut new_variables = vec![];
@@ -665,7 +764,7 @@ fn replace_point_for_aoe(aoes: MyAoes, points_mapping: &HashMap<String, u64>) ->
     Ok(MyAoes{aoes})
 }
 
-fn replace_point_for_set_points(my_set_points: MySetPoints, points_mapping: &HashMap<String, u64>) -> Result<MySetPoints, String> {
+fn replace_point_for_set_points(my_set_points: MySetPoints, points_mapping: &HashMap<String, u64>) -> Result<MySetPoints, AdapterErr> {
     let mut discretes = HashMap::with_capacity(my_set_points.discretes.len());
     for (key, value) in &my_set_points.discretes {
         let key = replace_point_without_prefix(key, &points_mapping)?;
@@ -681,7 +780,7 @@ fn replace_point_for_set_points(my_set_points: MySetPoints, points_mapping: &Has
     Ok(MySetPoints{discretes, analogs})
 }
 
-fn replace_point_for_solver(my_solver: MySolver, points_mapping: &HashMap<String, u64>) -> Result<MySolver, String> {
+fn replace_point_for_solver(my_solver: MySolver, points_mapping: &HashMap<String, u64>) -> Result<MySolver, AdapterErr> {
     let mut parameters = HashMap::with_capacity(my_solver.parameters.len());
     for (key, value) in &my_solver.parameters {
         let key = replace_point(key, &points_mapping)?;
@@ -693,7 +792,7 @@ fn replace_point_for_solver(my_solver: MySolver, points_mapping: &HashMap<String
     Ok(MySolver{f, x, parameters})
 }
 
-fn replace_point_for_programming(my_programming: MyProgramming, points_mapping: &HashMap<String, u64>) -> Result<MyProgramming, String> {
+fn replace_point_for_programming(my_programming: MyProgramming, points_mapping: &HashMap<String, u64>) -> Result<MyProgramming, AdapterErr> {
     let mut parameters = HashMap::with_capacity(my_programming.parameters.len());
     for (key, value) in &my_programming.parameters {
         let key = replace_point(key, &points_mapping)?;
@@ -710,7 +809,7 @@ fn str_to_json_value(value: &str) -> Value {
     Value::String(value.to_string())
 }
 
-pub fn aoe_action_result_to_north(action_result: PbActionResult, points_mapping: &HashMap<u64, String>) -> Result<MyPbActionResult, String> {
+pub fn aoe_action_result_to_north(action_result: PbActionResult, points_mapping: &HashMap<u64, String>) -> Result<MyPbActionResult, AdapterErr> {
     let yk_points = action_result.yk_points.iter().filter_map(|point|{
         get_point_tag(point, &points_mapping).ok()
     }).collect::<Vec<String>>();

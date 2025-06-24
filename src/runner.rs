@@ -37,7 +37,7 @@ pub async fn run_adapter() -> std::io::Result<()> {
     match do_register().await {
         Ok(_) => {},
         Err(err) => {
-            log::error!("do register error: {err}");
+            log::error!("do register error: {}", err.msg);
         },
     }
     log::info!("end do register mqtt");
@@ -45,7 +45,7 @@ pub async fn run_adapter() -> std::io::Result<()> {
     match do_data_query().await {
         Ok(_) => {},
         Err(err) => {
-            log::error!("do data_query error: {err}");
+            log::error!("do data_query error: {}", err.msg);
         },
     }
     log::info!("end do data_query mqtt");
@@ -53,7 +53,7 @@ pub async fn run_adapter() -> std::io::Result<()> {
     match aoe_result_upload().await {
         Ok(_) => {},
         Err(err) => {
-            log::error!("do aoe_result_upload error: {err}");
+            log::error!("do aoe_result_upload error: {}", err.msg);
         },
     }
     log::info!("end do aoe_result_upload mqtt");
@@ -61,7 +61,7 @@ pub async fn run_adapter() -> std::io::Result<()> {
     match do_keep_alive().await {
         Ok(_) => {},
         Err(err) => {
-            log::error!("do keep_alive error: {err}");
+            log::error!("do keep_alive error: {}", err.msg);
         },
     }
     log::info!("end do keep_alive mqtt");

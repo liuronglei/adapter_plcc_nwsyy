@@ -4,30 +4,37 @@ use tokio::sync::oneshot;
 use chrono::{Local, TimeZone};
 
 use crate::model::north::MyPbAoeResult;
-use crate::ADAPTER_NAME;
+use crate::utils::register_result;
+use crate::{AdapterErr, ErrCode, ADAPTER_NAME};
 use crate::model::datacenter::*;
 use crate::env::Env;
 use crate::utils::localapi::query_dev_mapping;
 
-pub async fn client_subscribe(client: &AsyncClient, topic: &str) -> Result<(), String> {
+pub async fn client_subscribe(client: &AsyncClient, topic: &str) -> Result<(), AdapterErr> {
     match client.subscribe(topic, QoS::AtMostOnce).await {
         Ok(_) => Ok(()),
         Err(v) => {
-            Err(v.to_string())
+            Err(AdapterErr {
+                code: ErrCode::MqttConnectErr,
+                msg: v.to_string(),
+            })
         }
     }
 }
 
-pub async fn client_publish(client: &AsyncClient, topic: &str, payload: &str) -> Result<(), String> {
+pub async fn client_publish(client: &AsyncClient, topic: &str, payload: &str) -> Result<(), AdapterErr> {
     match client.publish(topic, QoS::AtMostOnce, false, payload).await {
         Ok(_) => Ok(()),
         Err(v) => {
-            Err(v.to_string())
+            Err(AdapterErr {
+                code: ErrCode::MqttConnectErr,
+                msg: v.to_string(),
+            })
         }
     }
 }
 
-pub async fn do_query_dev(dev_ids: Vec<String>) -> Result<Vec<QueryDevResponseBody>, String> {
+pub async fn do_query_dev(dev_ids: Vec<String>) -> Result<Vec<QueryDevResponseBody>, AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
@@ -46,7 +53,7 @@ pub async fn do_query_dev(dev_ids: Vec<String>) -> Result<Vec<QueryDevResponseBo
     let payload = serde_json::to_string(&body).unwrap();
     client_publish(&client, &topic_request_query_dev, &payload).await?;
     // 处理订阅消息
-    let (tx, rx) = oneshot::channel::<Result<Vec<QueryDevResponseBody>, String>>();
+    let (tx, rx) = oneshot::channel::<Result<Vec<QueryDevResponseBody>, AdapterErr>>();
     tokio::spawn(async move {
         loop {
             let event = eventloop.poll().await;
@@ -66,11 +73,19 @@ pub async fn do_query_dev(dev_ids: Vec<String>) -> Result<Vec<QueryDevResponseBo
                                     }
                                 }
                                 if has_error {
-                                    log::error!("查询设备GUID，接收到异常响应：{:?}", msg);
+                                    tx.send(Err(AdapterErr {
+                                        code: ErrCode::QueryDevStatusErr,
+                                        msg: format!("查询设备GUID，返回status为false：: {:?}", msg),
+                                    }))
+                                } else {
+                                    tx.send(Ok(result))
                                 }
-                                tx.send(Ok(result))
                             }
-                            Err(e) => tx.send(Err(format!("查询设备GUID，解析返回字符串失败: {:?}", e))),
+                            Err(e) => tx.send(
+                                Err(AdapterErr {
+                                    code: ErrCode::QueryDevDeserializeErr,
+                                    msg: format!("查询设备GUID，返回字符串反序列化失败: {:?}", e),
+                                }))
                         };
                         if send_result.is_err() {
                             log::error!("do dev_guid error: receive mqtt massage failed");
@@ -80,7 +95,10 @@ pub async fn do_query_dev(dev_ids: Vec<String>) -> Result<Vec<QueryDevResponseBo
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    let _ = tx.send(Err(format!("do dev_guid error: {:?}", e)));
+                    let _ = tx.send(Err(AdapterErr {
+                        code: ErrCode::MqttConnectErr,
+                        msg: format!("执行dev_guid时mqtt连接失败: {:?}", e),
+                    }));
                     break;
                 }
             }
@@ -88,24 +106,41 @@ pub async fn do_query_dev(dev_ids: Vec<String>) -> Result<Vec<QueryDevResponseBo
     });
     match timeout(Duration::from_secs(mqtt_timeout), rx).await {
         Ok(Ok(result)) => result,
-        Ok(Err(_)) => Err("查询设备GUID，等待响应失败".to_string()),
-        Err(_) => Err("查询设备GUID超时，未收到MQTT响应".to_string()),
+        Ok(Err(_)) => Err(AdapterErr {
+            code: ErrCode::QueryDevTimeout,
+            msg: "查询设备GUID，等待响应失败".to_string(),
+        }),
+        Err(_) => Err(AdapterErr {
+            code: ErrCode::QueryDevTimeout,
+            msg: "查询设备GUID超时，未收到MQTT响应".to_string(),
+        }),
     }
 }
 
-pub async fn do_register() -> Result<(), String> {
+pub async fn do_register() -> Result<(), AdapterErr> {
     tokio::spawn(async {
+        let mut result = true;
         if let Err(err) = do_register_model().await {
-            log::error!("{err}");
+            result = false;
+            log::error!("{}", err.msg);
         }
         if let Err(err) = do_register_app().await {
-            log::error!("{err}");
+            result = false;
+            log::error!("{}", err.msg);
         }
+        register_result::set_result(result);
     });
     Ok(())
 }
 
-async fn do_register_model() -> Result<(), String> {
+pub async fn do_register_sync() -> Result<(), AdapterErr> {
+    let _ = do_register_model().await?;
+    let _ = do_register_app().await?;
+    register_result::set_result(true);
+    Ok(())
+}
+
+async fn do_register_model() -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
@@ -125,7 +160,7 @@ async fn do_register_model() -> Result<(), String> {
     let payload = serde_json::to_string(&body).unwrap();
     client_publish(&client, &topic_request_register, &payload).await?;
     // 处理订阅消息
-    let (tx, rx) = oneshot::channel::<Result<bool, String>>();
+    let (tx, rx) = oneshot::channel::<Result<bool, AdapterErr>>();
     tokio::spawn(async move {
         loop {
             let event = eventloop.poll().await;
@@ -137,7 +172,10 @@ async fn do_register_model() -> Result<(), String> {
                                 let result = msg.ack.to_lowercase() == "true".to_string();
                                 tx.send(Ok(result))
                             }
-                            Err(e) => tx.send(Err(format!("注册model，解析返回字符串失败: {:?}", e))),
+                            Err(e) => tx.send(Err(AdapterErr {
+                                code: ErrCode::ModelRegisterErr,
+                                msg: format!("注册model失败，解析返回字符串错误: {:?}", e),
+                            })),
                         };
                         if send_result.is_err() {
                             log::error!("do register_model error: receive mqtt massage failed");
@@ -147,7 +185,10 @@ async fn do_register_model() -> Result<(), String> {
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    let _ = tx.send(Err(format!("注册model，发生错误: {:?}", e)));
+                    let _ = tx.send(Err(AdapterErr {
+                        code: ErrCode::ModelRegisterErr,
+                        msg: format!("注册model失败，发生错误: {:?}", e),
+                    }));
                     break;
                 }
             }
@@ -158,19 +199,28 @@ async fn do_register_model() -> Result<(), String> {
             match result {
                 Ok(b) => {
                     if !b {
-                        return Err("注册model失败，响应结果为false".to_string());
+                        return Err(AdapterErr {
+                            code: ErrCode::ModelRegisterErr,
+                            msg: "注册model失败，响应结果为false".to_string(),
+                        });
                     }
                 }
                 Err(e) => return Err(e),
             }
         }
-        Ok(Err(_)) => return Err("注册model，等待响应失败".to_string()),
-        Err(_) => return Err("注册model超时，未收到MQTT响应".to_string()),
+        Ok(Err(_)) => return Err(AdapterErr {
+            code: ErrCode::ModelRegisterErr,
+            msg: "注册model，等待响应失败".to_string(),
+        }),
+        Err(_) => return Err(AdapterErr {
+            code: ErrCode::ModelRegisterErr,
+            msg: "注册model超时，未收到MQTT响应".to_string(),
+        }),
     }
     Ok(())
 }
 
-async fn do_register_app() -> Result<(), String> {
+async fn do_register_app() -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
@@ -190,7 +240,7 @@ async fn do_register_app() -> Result<(), String> {
     let payload = serde_json::to_string(&body).unwrap();
     client_publish(&client, &topic_request_register, &payload).await?;
     // 处理订阅消息
-    let (tx, rx) = oneshot::channel::<Result<bool, String>>();
+    let (tx, rx) = oneshot::channel::<Result<bool, AdapterErr>>();
     tokio::spawn(async move {
         loop {
             let event = eventloop.poll().await;
@@ -202,7 +252,10 @@ async fn do_register_app() -> Result<(), String> {
                                 let result = msg.ack.to_lowercase() == "true".to_string();
                                 tx.send(Ok(result))
                             }
-                            Err(e) => tx.send(Err(format!("注册APP，解析返回字符串失败: {:?}", e))),
+                            Err(e) => tx.send(Err(AdapterErr {
+                                code: ErrCode::AppRegisterErr,
+                                msg: format!("注册APP，解析返回字符串失败: {:?}", e),
+                            })),
                         };
                         if send_result.is_err() {
                             log::error!("do register_app error: receive mqtt massage failed");
@@ -212,7 +265,10 @@ async fn do_register_app() -> Result<(), String> {
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    let _ = tx.send(Err(format!("注册APP，发生错误: {:?}", e)));
+                    let _ = tx.send(Err(AdapterErr {
+                        code: ErrCode::AppRegisterErr,
+                        msg: format!("注册APP，发生错误: {:?}", e),
+                    }));
                     break;
                 }
             }
@@ -223,30 +279,39 @@ async fn do_register_app() -> Result<(), String> {
             match result {
                 Ok(b) => {
                     if !b {
-                        return Err("注册APP失败，响应结果为false".to_string());
+                        return Err(AdapterErr {
+                            code: ErrCode::AppRegisterErr,
+                            msg: "注册APP失败，响应结果为false".to_string(),
+                        });
                     }
                 }
                 Err(e) => return Err(e),
             }
         }
-        Ok(Err(_)) => return Err("注册APP，等待响应失败".to_string()),
-        Err(_) => return Err("注册APP超时，未收到MQTT响应".to_string()),
+        Ok(Err(_)) => return Err(AdapterErr {
+            code: ErrCode::AppRegisterErr,
+            msg: "注册APP，等待响应失败".to_string(),
+        }),
+        Err(_) => return Err(AdapterErr {
+            code: ErrCode::AppRegisterErr,
+            msg: "注册APP超时，未收到MQTT响应".to_string(),
+        }),
     }
     Ok(())
 }
 
-pub async fn do_data_query() -> Result<(), String> {
+pub async fn do_data_query() -> Result<(), AdapterErr> {
     tokio::spawn(async {
         // 等待5秒，避免因为API还没启动或者数据还未写入完成，查询失败
         actix_rt::time::sleep(Duration::from_millis(5000)).await;
         if let Err(e) = data_query().await {
-            log::error!("do data_query error: {}", e);
+            log::error!("do data_query error: {}", e.msg);
         }
     });
     Ok(())
 }
 
-pub async fn data_query() -> Result<(), String> {
+pub async fn data_query() -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
@@ -282,16 +347,16 @@ pub async fn data_query() -> Result<(), String> {
     Ok(())
 }
 
-pub async fn do_keep_alive() -> Result<(), String> {
+pub async fn do_keep_alive() -> Result<(), AdapterErr> {
     tokio::spawn(async {
         if let Err(e) = keep_alive().await {
-            log::error!("do keep_alive error: {}", e);
+            log::error!("do keep_alive error: {}", e.msg);
         }
     });
     Ok(())
 }
 
-pub async fn keep_alive() -> Result<(), String> {
+pub async fn keep_alive() -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let app_name = env.get_app_name();
     let mqtt_server = env.get_mqtt_server();
@@ -325,7 +390,7 @@ pub async fn keep_alive() -> Result<(), String> {
     Ok(())
 }
 
-pub async fn query_register_dev() -> Result<String, String> {
+pub async fn query_register_dev() -> Result<String, AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
@@ -341,7 +406,7 @@ pub async fn query_register_dev() -> Result<String, String> {
     client_subscribe(&client, &topic_response_query).await?;
     client_publish(&client, &topic_request_query, &payload).await?;
     // 处理订阅消息
-    let (tx, rx) = oneshot::channel::<Result<String, String>>();
+    let (tx, rx) = oneshot::channel::<Result<String, AdapterErr>>();
     tokio::spawn(async move {
         loop {
             let event = eventloop.poll().await;
@@ -359,7 +424,10 @@ pub async fn query_register_dev() -> Result<String, String> {
                                 }
                                 tx.send(Ok(dev))
                             }
-                            Err(e) => tx.send(Err(format!("查询注册dev，解析返回字符串失败: {:?}", e))),
+                            Err(e) => tx.send(Err(AdapterErr {
+                                code: ErrCode::QueryRegisterDevErr,
+                                msg: format!("查询注册dev，解析返回字符串失败: {:?}", e),
+                            })),
                         };
                         if send_result.is_err() {
                             log::error!("do query_register_dev error: receive mqtt massage failed");
@@ -369,7 +437,10 @@ pub async fn query_register_dev() -> Result<String, String> {
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    let _ = tx.send(Err(format!("查询注册dev，发生错误: {:?}", e)));
+                    let _ = tx.send(Err(AdapterErr {
+                        code: ErrCode::QueryRegisterDevErr,
+                        msg: format!("查询注册dev，发生错误: {:?}", e),
+                    }));
                     break;
                 }
             }
@@ -379,8 +450,14 @@ pub async fn query_register_dev() -> Result<String, String> {
         Ok(Ok(result)) => {
             result
         }
-        Ok(Err(_)) => Err("查询注册dev，等待响应失败".to_string()),
-        Err(_) => Err("查询注册dev超时，未收到MQTT响应".to_string()),
+        Ok(Err(_)) => Err(AdapterErr {
+            code: ErrCode::QueryRegisterDevErr,
+            msg: "查询注册dev，等待响应失败".to_string(),
+        }),
+        Err(_) => Err(AdapterErr {
+            code: ErrCode::QueryRegisterDevErr,
+            msg: "查询注册dev超时，未收到MQTT响应".to_string(),
+        }),
     }
 }
 
