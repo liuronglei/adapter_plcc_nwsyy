@@ -55,12 +55,18 @@ pub async fn do_query_dev(dev_ids: Vec<String>) -> Result<Vec<QueryDevResponseBo
                     if p.topic == topic_response_query_dev {
                         let send_result = match serde_json::from_slice::<QueryDevResponse>(&p.payload) {
                             Ok(msg) => {
+                                let mut has_error = false;
                                 let mut result = vec![];
-                                for data in msg.devices {
+                                for data in msg.devices.clone() {
                                     let data_clone = data.clone();
                                     if data.status.to_lowercase() == "true".to_string() && data.guid.is_some() {
                                         result.push(data_clone);
+                                    } else {
+                                        has_error = true;
                                     }
+                                }
+                                if has_error {
+                                    log::error!("查询设备GUID，接收到异常响应：{:?}", msg);
                                 }
                                 tx.send(Ok(result))
                             }
