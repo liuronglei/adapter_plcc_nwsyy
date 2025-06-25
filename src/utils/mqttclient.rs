@@ -671,13 +671,13 @@ async fn test_mqtt_response() {
             token: "".to_string(),
             time: "".to_string(),
             devices: vec![
-                QueryDevResponseBody { devID: "dev1".to_string(), status: "true".to_string(),
+                QueryDevResponseBody { devID: "FE80-3728-DF9B-6076-3872-7525-9B31-F77F".to_string(), status: "true".to_string(),
                     addr: Some("".to_string()), model: Some("".to_string()), desc: Some("".to_string()), port: Some("".to_string()),
                     guid: Some("guid1".to_string()), reason: Some("".to_string()) },
-                QueryDevResponseBody { devID: "dev2".to_string(), status: "true".to_string(),
+                QueryDevResponseBody { devID: "FE80-4D2F-E64F-B696-5206-26A0-4B37-DD6E".to_string(), status: "true".to_string(),
                     addr: Some("".to_string()), model: Some("".to_string()), desc: Some("".to_string()), port: Some("".to_string()),
                     guid: Some("guid2".to_string()), reason: Some("".to_string()) },
-                QueryDevResponseBody { devID: "dev3".to_string(), status: "true".to_string(),
+                QueryDevResponseBody { devID: "FE80-90D1-B2E2-5A07-B94D-FDA2-80E0-939A".to_string(), status: "true".to_string(),
                     addr: Some("".to_string()), model: Some("".to_string()), desc: Some("".to_string()), port: Some("".to_string()),
                     guid: Some("guid3".to_string()), reason: Some("".to_string()) }
             ],
