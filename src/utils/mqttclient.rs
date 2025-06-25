@@ -627,3 +627,93 @@ fn generate_time(ts_millis: Option<u64>) -> String {
         generate_current_time()
     }
 }
+
+#[tokio::test]
+async fn test_mqtt_response() {
+    Env::init(ADAPTER_NAME);
+    let env = Env::get_env(ADAPTER_NAME);
+    let app_name = env.get_app_name();
+    let mqtt_server = env.get_mqtt_server();
+    let mqtt_server_port = env.get_mqtt_server_port();
+    let mut mqttoptions = MqttOptions::new("my_test", &mqtt_server, mqtt_server_port);
+    mqttoptions.set_keep_alive(Duration::from_secs(5));
+    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
+    // 启动 event loop 的异步任务（用于保持连接和接收消息）
+    tokio::spawn(async move {
+        loop {
+            match eventloop.poll().await {
+                Ok(_) => {}
+                Err(e) => eprintln!("MQTT 事件循环错误: {:?}", e),
+            }
+        }
+    });
+    // 循环发送消息
+    loop {
+        actix_rt::time::sleep(Duration::from_millis(1000)).await;
+        let tp = format!("/{app_name}/sys.dbc/S-dataservice/F-SetModel");
+        let body = serde_json::to_string(&RegisterResponse {
+            token: "".to_string(),
+            time: "".to_string(),
+            ack: "true".to_string(),
+        }).unwrap();
+        let _ = client_publish(&client, &tp, &body).await;
+
+        let tp = format!("/{app_name}/sys.dbc/S-dataservice/F-Register");
+        let body = serde_json::to_string(&RegisterResponse {
+            token: "".to_string(),
+            time: "".to_string(),
+            ack: "true".to_string(),
+        }).unwrap();
+        let _ = client_publish(&client, &tp, &body).await;
+
+        let tp = format!("/{app_name}/ext.syy.subota/S-otaservice/F-GetNodeInfo");
+        let body = serde_json::to_string(&QueryDevResponse {
+            token: "".to_string(),
+            time: "".to_string(),
+            devices: vec![
+                QueryDevResponseBody { devID: "dev1".to_string(), status: "true".to_string(),
+                    addr: Some("".to_string()), model: Some("".to_string()), desc: Some("".to_string()), port: Some("".to_string()),
+                    guid: Some("guid1".to_string()), reason: Some("".to_string()) },
+                QueryDevResponseBody { devID: "dev2".to_string(), status: "true".to_string(),
+                    addr: Some("".to_string()), model: Some("".to_string()), desc: Some("".to_string()), port: Some("".to_string()),
+                    guid: Some("guid2".to_string()), reason: Some("".to_string()) },
+                QueryDevResponseBody { devID: "dev3".to_string(), status: "true".to_string(),
+                    addr: Some("".to_string()), model: Some("".to_string()), desc: Some("".to_string()), port: Some("".to_string()),
+                    guid: Some("guid3".to_string()), reason: Some("".to_string()) }
+            ],
+        }).unwrap();
+        let _ = client_publish(&client, &tp, &body).await;
+
+        let tp = format!("/{app_name}/sys.dbc/S-dataservice/F-GetRealData");
+        let body = serde_json::to_string(&RegisterResponse {
+            token: "".to_string(),
+            time: "".to_string(),
+            ack: "true".to_string(),
+        }).unwrap();
+        let _ = client_publish(&client, &tp, &body).await;
+
+        let tp = format!("/{app_name}/sys.appman/S-appmanager/F-KeepAlive");
+        let body = serde_json::to_string(&KeepAliveResponse {
+            token: "".to_string(),
+            time: "".to_string(),
+            ack: "true".to_string(),
+            errmsg: "".to_string(),
+        }).unwrap();
+        let _ = client_publish(&client, &tp, &body).await;
+
+        let tp = format!("/{app_name}/sys.dbc/S-dataservice/F-GetRegister");
+        let body = serde_json::to_string(&RegisterDevResult {
+            token: "".to_string(),
+            time: "".to_string(),
+            body: vec![RegisterDevResultBody {
+                model: "".to_string(),
+                port: "".to_string(),
+                body: vec![DeviceEntry { addr: "".to_string(), appname: "".to_string(), desc: "".to_string(), dev: "app_dev".to_string(), 
+                    device_type: "".to_string(), guid: "".to_string(), isReport: "".to_string(), manu_id: "".to_string(), 
+                    manu_name: "".to_string(), node_id: "".to_string(), pro_type: "".to_string(), product_id: "".to_string() }
+                ]
+            }],
+        }).unwrap();
+        let _ = client_publish(&client, &tp, &body).await;
+    }
+}
