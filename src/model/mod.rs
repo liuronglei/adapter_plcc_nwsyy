@@ -469,7 +469,7 @@ fn events_to_south(aoe_id: u64, north: Vec<MyEventNode>) -> Result<Vec<EventNode
         if !expr.check_validity() {
             return Err(AdapterErr {
                 code: ErrCode::AoeEventErr,
-                msg: format!("策略event公式不可用：{expr_n}"),
+                msg: format!("策略事件公式不可用：{expr_n}"),
             });
         }
         let event_s = EventNode {

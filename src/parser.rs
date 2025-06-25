@@ -154,8 +154,6 @@ impl ParserManager {
                     log::info!("end do reset");
                 }
                 if !has_err {
-                    // 等待5秒
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                     log::info!("start do query_data mqtt");
                     match do_data_query().await {
                         Ok(()) => {},
