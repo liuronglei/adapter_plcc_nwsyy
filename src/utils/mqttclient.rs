@@ -473,7 +473,7 @@ fn generate_register_model(model: String) -> RegisterModel {
     };
     let time = Local::now().timestamp_millis();
     RegisterModel {
-        token: format!("register_model_{time}"),
+        token: time.to_string(),
         time: generate_current_time(),
         model,
         body: vec![body],
@@ -496,7 +496,7 @@ fn generate_register_app(model: String) -> RegisterApp {
     };
     let time = Local::now().timestamp_millis();
     RegisterApp {
-        token: format!("register_app_{time}"),
+        token: time.to_string(),
         time: generate_current_time(),
         body: vec![body],
     }
@@ -517,7 +517,7 @@ fn generate_query_data(devs: &Vec<QueryDevResponseBody>) -> DataQuery {
         }
     ).collect::<Vec<DataQueryBody>>();
     DataQuery {
-        token: format!("query_data_{time}"),
+        token: time.to_string(),
         time: generate_current_time(),
         body,
     }
@@ -526,7 +526,7 @@ fn generate_query_data(devs: &Vec<QueryDevResponseBody>) -> DataQuery {
 fn generate_query_register_dev() -> QueryRegisterDev {
     let time = Local::now().timestamp_millis();
     QueryRegisterDev {
-        token: format!("query_register_dev_{time}"),
+        token: time.to_string(),
         time: generate_current_time(),
         body: vec!["DC_SDTTU_frozen".to_string()],
     }
@@ -535,7 +535,7 @@ fn generate_query_register_dev() -> QueryRegisterDev {
 fn generate_query_dev(dev_ids: Vec<String>) -> QueryDev {
     let time = Local::now().timestamp_millis();
     QueryDev {
-        token: format!("query_dev_{time}"),
+        token: time.to_string(),
         time: generate_current_time(),
         devices: dev_ids,
     }
@@ -555,7 +555,7 @@ pub fn generate_aoe_update(aoe_result: Vec<MyPbAoeResult>, model: String, dev: S
         extdata: aoe_result,
     };
     AoeUpdate {
-        token: format!("aoe_result_update_{time}"),
+        token: time.to_string(),
         time: generate_current_time(),
         body: vec![body],
     }
@@ -585,7 +585,7 @@ pub fn generate_aoe_set(aoe_result: Vec<MyPbAoeResult>, model: String, dev: Stri
         extdata: aoe_result,
     };
     AoeSet {
-        token: format!("aoe_resul_set_{time}"),
+        token: time.to_string(),
         time: timestamp,
         body: vec![body],
         sour_type: "104".to_string(),
