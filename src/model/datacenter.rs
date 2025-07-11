@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::model::north::MyPbAoeResult;
+use crate::model::north::{MyPbAoeResult, MyMeasurement, MyAoe, MyTransport};
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct RegisterApp {
@@ -218,4 +218,52 @@ pub struct KeepAliveResponse {
     pub time: String,
     pub ack: String,
     pub errmsg: String,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct CloudEventRequest {
+    pub token: String,
+    pub time: String,
+    #[serde(rename = "msgInfo")]
+    pub msg_info: String,
+    pub cmd: CloudEventCmd,
+    pub body: Option<CloudEventRequestBody>,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct CloudEventRequestBody {
+    pub aoes_id: Option<Vec<u64>>,
+    pub aoes_status: Option<Vec<CloudEventAoeStatus>>,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct CloudEventResponse {
+    pub token: String,
+    pub time: String,
+    #[serde(rename = "msgInfo")]
+    pub msg_info: String,
+    pub data: CloudEventResponseBody,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct CloudEventResponseBody {
+    pub points: Option<Vec<MyMeasurement>>,
+    pub transports: Option<Vec<MyTransport>>,
+    pub aoes: Option<Vec<MyAoe>>,
+    pub aoes_status: Option<Vec<CloudEventAoeStatus>>,
+    pub code: u64,
+    pub msg: String,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct CloudEventAoeStatus {
+    pub aoe_id: u64,
+    pub aoe_status: u8,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub enum CloudEventCmd {
+    GetTgPLCCConfig,
+    TgAOEControl,
+    GetTgAOEStatus
 }

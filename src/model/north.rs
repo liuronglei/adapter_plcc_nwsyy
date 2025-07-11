@@ -6,7 +6,10 @@ use crate::{AdapterErr, ErrCode};
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct MyTransports {
-    pub transports: Vec<MyTransport>,
+    pub transports: Option<Vec<MyTransport>>,
+    pub add: Option<Vec<MyTransport>>,
+    pub edit: Option<Vec<MyTransport>>,
+    pub delete: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
@@ -31,36 +34,43 @@ pub struct MyMqttTransportJoin {
 }
 
 impl MyMqttTransportJoin {
-    pub fn from_vec(transports: Vec<MyTransport>) -> Result<Self, AdapterErr> {
-        if transports.is_empty() {
+    pub fn from_vec(transports: Option<Vec<MyTransport>>) -> Result<Self, AdapterErr> {
+        if let Some(transports) = transports {
+            if transports.is_empty() {
+                return Err(AdapterErr {
+                    code: ErrCode::TransportIsEmpty,
+                    msg: "通道列表不能为空".to_string(),
+                });
+            }
+            let mut name = "".to_string();
+            let mut dev_ids_map = HashMap::new();
+            for transport in transports {
+                match transport {
+                    MyTransport::Mqtt(mqtt_transport) => {
+                        if name.is_empty() {
+                            name = mqtt_transport.name.clone();
+                        }
+                        dev_ids_map.insert(
+                            mqtt_transport.dev_id,
+                            (
+                                mqtt_transport.point_ycyx_ids,
+                                mqtt_transport.point_yt_ids,
+                                mqtt_transport.point_yk_ids,
+                            ),
+                        );
+                    },
+                }
+            }
+            Ok(Self {
+                dev_ids_map,
+                name,
+            })
+        } else {
             return Err(AdapterErr {
                 code: ErrCode::TransportIsEmpty,
                 msg: "通道列表不能为空".to_string(),
             });
         }
-        let mut name = "".to_string();
-        let mut dev_ids_map = HashMap::new();
-        for transport in transports {
-            match transport {
-                MyTransport::Mqtt(mqtt_transport) => {
-                    if name.is_empty() {
-                        name = mqtt_transport.name.clone();
-                    }
-                    dev_ids_map.insert(
-                        mqtt_transport.dev_id,
-                        (
-                            mqtt_transport.point_ycyx_ids,
-                            mqtt_transport.point_yt_ids,
-                            mqtt_transport.point_yk_ids,
-                        ),
-                    );
-                },
-            }
-        }
-        Ok(Self {
-            dev_ids_map,
-            name,
-        })
     }
 }
 
@@ -71,7 +81,10 @@ pub enum MyTransport {
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct MyPoints {
-    pub points: Vec<MyMeasurement>,
+    pub points: Option<Vec<MyMeasurement>>,
+    pub add: Option<Vec<MyMeasurement>>,
+    pub edit: Option<Vec<MyMeasurement>>,
+    pub delete: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
@@ -128,7 +141,10 @@ pub struct PointParam {
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct MyAoes {
-    pub aoes: Vec<MyAoe>,
+    pub aoes: Option<Vec<MyAoe>>,
+    pub add: Option<Vec<MyAoe>>,
+    pub edit: Option<Vec<MyAoe>>,
+    pub delete: Option<Vec<u64>>,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]

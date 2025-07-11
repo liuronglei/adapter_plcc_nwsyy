@@ -9,12 +9,14 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use tokio::time::{interval, Duration};
 use crate::model::aoe_action_result_to_north;
-use crate::model::south::{AoeModel, Measurement, PbAoeResults, Transport};
+use crate::model::datacenter::CloudEventAoeStatus;
+use crate::model::south::{AoeModel, Measurement, PbAoeResults, Transport, AoeControl};
 use crate::model::north::{MyPbAoeResult, MyPbActionResult};
 use crate::utils::mqttclient::{client_publish, generate_aoe_update, generate_aoe_set, query_register_dev};
 use crate::utils::point_param_map;
 use crate::utils::localapi::query_aoe_mapping;
-use crate::{AdapterErr, ErrCode, ADAPTER_NAME, URL_AOES, URL_AOE_RESULTS, URL_LOGIN, URL_POINTS, URL_RESET, URL_TRANSPORTS};
+use crate::{AdapterErr, ErrCode, ADAPTER_NAME, URL_AOES, URL_AOE_RESULTS, URL_LOGIN, URL_POINTS, URL_RESET,
+    URL_TRANSPORTS, URL_UNRUN_AOES, URL_RUNNING_AOES, URL_AOE_CONTROL};
 use crate::env::Env;
 
 const PASSWORD_V_KEY: &[u8] = b"zju-plcc";
@@ -532,5 +534,130 @@ async fn query_aoe_result(token: String, ids: Vec<u64>) -> Result<PbAoeResults, 
                 msg: format!("连接PLCC失败：{:?}", ee),
             })
         }
+    }
+}
+
+pub async fn do_query_aoe_status() -> Result<Vec<CloudEventAoeStatus>, AdapterErr> {
+    let token = login().await?;
+    let mut aoe_status = vec![];
+    match query_unrun_aoes(token.clone()).await {
+        Ok(unrun_aoes) => {
+            for aoe_id in unrun_aoes {
+                aoe_status.push(CloudEventAoeStatus {
+                    aoe_id,
+                    aoe_status: 0,
+                });
+            }
+        },
+        Err(e) => {
+            return Err(e);
+        }
+    }
+    match query_running_aoes(token.clone()).await {
+        Ok(running_aoes) => {
+            for aoe_id in running_aoes {
+                aoe_status.push(CloudEventAoeStatus {
+                    aoe_id,
+                    aoe_status: 1,
+                });
+            }
+        },
+        Err(e) => {
+            return Err(e);
+        }
+    }
+    aoe_status.sort_by_key(|x| x.aoe_id);
+    Ok(aoe_status)
+}
+
+async fn query_unrun_aoes(token: String) -> Result<Vec<u64>, AdapterErr> {
+    let env = Env::get_env(ADAPTER_NAME);
+    let plcc_server = env.get_plcc_server();
+    let url = format!("{plcc_server}/{URL_UNRUN_AOES}");
+    let headers = get_header(token);
+    let client = Client::new();
+    match client
+        .get(&url)
+        .headers(headers)
+        .send().await {
+        Ok(response) => {
+            if let Ok(aoe_ids) = response.json::<Vec<u64>>().await {
+                Ok(aoe_ids)
+            } else {
+                Err(AdapterErr {
+                    code: ErrCode::PlccConnectErr,
+                    msg: "调用查询未运行策略API失败".to_string(),
+                })
+            }
+        },
+        Err(ee) => {
+            log::error!("link to plcc error: {:?}", ee);
+            Err(AdapterErr {
+                code: ErrCode::PlccConnectErr,
+                msg: format!("连接PLCC失败：{:?}", ee),
+            })
+        }
+    }
+}
+
+async fn query_running_aoes(token: String) -> Result<Vec<u64>, AdapterErr> {
+    let env = Env::get_env(ADAPTER_NAME);
+    let plcc_server = env.get_plcc_server();
+    let url = format!("{plcc_server}/{URL_RUNNING_AOES}");
+    let headers = get_header(token);
+    let client = Client::new();
+    match client
+        .get(&url)
+        .headers(headers)
+        .send().await {
+        Ok(response) => {
+            if let Ok(aoe_ids) = response.json::<Vec<u64>>().await {
+                Ok(aoe_ids)
+            } else {
+                Err(AdapterErr {
+                    code: ErrCode::PlccConnectErr,
+                    msg: "调用查询运行中策略API失败".to_string(),
+                })
+            }
+        },
+        Err(ee) => {
+            log::error!("link to plcc error: {:?}", ee);
+            Err(AdapterErr {
+                code: ErrCode::PlccConnectErr,
+                msg: format!("连接PLCC失败：{:?}", ee),
+            })
+        }
+    }
+}
+
+pub async fn do_aoe_action(aoe_control: AoeControl) -> Result<(), AdapterErr> {
+    let token = login().await?;
+    aoe_action(token, aoe_control).await
+}
+
+async fn aoe_action(token: String, aoe_control: AoeControl) -> Result<(), AdapterErr> {
+    let env = Env::get_env(ADAPTER_NAME);
+    let plcc_server = env.get_plcc_server();
+    let url = format!("{plcc_server}/{URL_AOE_CONTROL}");
+    let headers = get_header(token);
+    let client = Client::new();
+    if let Ok(response) = client
+        .post(&url)
+        .headers(headers)
+        .json(&aoe_control)
+        .send().await {
+        if response.status() == StatusCode::OK {
+            Ok(())
+        } else {
+            Err(AdapterErr {
+                code: ErrCode::PlccConnectErr,
+                msg: "调用启停策略API失败".to_string(),
+            })
+        }
+    } else {
+        Err(AdapterErr {
+            code: ErrCode::PlccConnectErr,
+            msg: "连接PLCC失败".to_string(),
+        })
     }
 }

@@ -20,6 +20,7 @@ pub const POINT_FILE_DIR: &str = "pointFileDir";
 pub const TRANSPORT_DIR: &str = "transportFileDir";
 pub const AOE_DIR: &str = "aoeFileDir";
 pub const JSON_DIR: &str = "jsonFileDir";
+pub const RESULT_DIR: &str = "resultFileDir";
 pub const APP_NAME: &str = "appName";
 pub const APP_MODEL: &str = "appModel";
 
@@ -63,9 +64,9 @@ pub const LOG_HIS_FILE_NUM: &str = "logHisFileNum";
 pub const DATABASE_URL: &str = "databaseUrl";
 
 
-const CONFIG_ARGS: [&str; 40] = [CONF_PATH, BEE_ID, MQTT_SERVER, MQTT_AUTH, HTTP_SERVER_PORT,
+const CONFIG_ARGS: [&str; 41] = [CONF_PATH, BEE_ID, MQTT_SERVER, MQTT_AUTH, HTTP_SERVER_PORT,
     MQTT_CLIENT_BUF_SIZE, MQTT_MV_LIMIT, SOCKET_BUF_SIZE_NORTH, SOCKET_BUF_SIZE_SOUTH, EXE_ROOT_DIR,
-    POINT_FILE_DIR, TRANSPORT_DIR, JSON_DIR, AOE_DIR, WEB_DIR, DB_DIR, LOG_DIR,
+    POINT_FILE_DIR, TRANSPORT_DIR, JSON_DIR, RESULT_DIR, AOE_DIR, WEB_DIR, DB_DIR, LOG_DIR,
     APP_NAME, APP_MODEL, MQTT_PACKAGE_MAX_SIZE, IS_LOCAL_FRONTEND, IS_DB, IS_HIS_DB, IS_FAKE_DELETE,
     DB_DIR_SIZE_LIMIT, IS_LOCAL_MQTT, LOCAL_MQTT_PORT, LOG_LEVEL, LOG_SAVE_TIME, LOG_SAVE_SIZE,
     LOG_HIS_FILE_NUM, MQTT_TIMEOUT, DATABASE_URL, PLCC_SERVER,
@@ -198,6 +199,11 @@ impl Env {
 
     pub fn get_json_dir(&self) -> String {
         let path = self.properties.get(JSON_DIR).unwrap().to_owned();
+        self.transform_path_to_absolute(path.as_str())
+    }
+
+    pub fn get_result_dir(&self) -> String {
+        let path = self.properties.get(RESULT_DIR).unwrap().to_owned();
         self.transform_path_to_absolute(path.as_str())
     }
 

@@ -6,7 +6,7 @@ use actix_web::middleware::Compress;
 use actix_web::web::Data;
 use crate::ADAPTER_NAME;
 use crate::parser::{start_parser_service, config_parser_web_service};
-use crate::utils::mqttclient::{do_register, do_data_query, do_keep_alive};
+use crate::utils::mqttclient::{do_register, do_data_query, do_keep_alive, do_cloud_event};
 use crate::utils::plccapi::aoe_result_upload;
 use crate::utils::log_init::write_log_config;
 use crate::env::Env;
@@ -65,6 +65,14 @@ pub async fn run_adapter() -> std::io::Result<()> {
         },
     }
     log::info!("end do keep_alive mqtt");
+    log::info!("start do cloud_event mqtt");
+    match do_cloud_event().await {
+        Ok(_) => {},
+        Err(err) => {
+            log::error!("do cloud_event error: {}", err.msg);
+        },
+    }
+    log::info!("end do cloud_event mqtt");
     let parser_sender = start_parser_service(data_path.to_string());
     let cloned_parser_sender = Data::new(parser_sender.clone());
     let actix_web_job = std::thread::spawn(move || {

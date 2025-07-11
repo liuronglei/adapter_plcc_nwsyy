@@ -1,14 +1,19 @@
+use std::fs::File;
+use std::io::BufReader;
+use std::collections::HashSet;
 use rumqttc::{AsyncClient, Event, Incoming, MqttOptions, QoS};
 use tokio::time::{timeout, Duration};
 use tokio::sync::oneshot;
 use chrono::{Local, TimeZone};
 
-use crate::model::north::MyPbAoeResult;
+use crate::model::north::{MyAoes, MyPbAoeResult, MyPoints, MyTransports};
+use crate::model::south::{AoeControl, AoeAction};
 use crate::utils::register_result;
 use crate::{AdapterErr, ErrCode, ADAPTER_NAME};
 use crate::model::datacenter::*;
 use crate::env::Env;
-use crate::utils::localapi::query_dev_mapping;
+use crate::utils::localapi::{query_dev_mapping, query_aoe_mapping};
+use crate::utils::plccapi::{do_query_aoe_status, do_aoe_action};
 
 pub async fn client_subscribe(client: &AsyncClient, topic: &str) -> Result<(), AdapterErr> {
     match client.subscribe(topic, QoS::AtMostOnce).await {
@@ -458,6 +463,224 @@ pub async fn query_register_dev() -> Result<String, AdapterErr> {
             code: ErrCode::QueryRegisterDevErr,
             msg: "查询注册dev超时，未收到MQTT响应".to_string(),
         }),
+    }
+}
+
+pub async fn do_cloud_event() -> Result<(), AdapterErr> {
+    tokio::spawn(async {
+        if let Err(e) = cloud_event().await {
+            log::error!("do cloud_event error: {}", e.msg);
+        }
+    });
+    Ok(())
+}
+
+pub async fn cloud_event() -> Result<(), AdapterErr> {
+    let env = Env::get_env(ADAPTER_NAME);
+    let app_name = env.get_app_name();
+    let mqtt_server = env.get_mqtt_server();
+    let mqtt_server_port = env.get_mqtt_server_port();
+    let mut mqttoptions = MqttOptions::new("plcc_event", &mqtt_server, mqtt_server_port);
+    mqttoptions.set_keep_alive(Duration::from_secs(5));
+    // mqttoptions.set_credentials("username", "password");
+    let topic_request = format!("/ext.syy.phSmc/{app_name}/S-smclink/F-PlccEvent");
+    let topic_response = format!("/{app_name}/ext.syy.phSmc/S-smclink/F-PlccEvent");
+    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
+    // 订阅魔方消息主题
+    client_subscribe(&client, &topic_response).await?;
+    tokio::spawn(async move {
+        loop {
+            let event = eventloop.poll().await;
+            match event {
+                Ok(Event::Incoming(Incoming::Publish(p))) => {
+                    if let Ok(msg) = serde_json::from_slice::<CloudEventRequest>(&p.payload) {
+                        match msg.cmd {
+                            CloudEventCmd::GetTgPLCCConfig => {
+                                let response = serde_json::to_string(&do_get_plcc_config()).unwrap();
+                                let _ = client_publish(&client, &topic_request, &response).await;
+                            },
+                            CloudEventCmd::TgAOEControl => {
+                                let response = serde_json::to_string(&do_aoe_control(msg).await).unwrap();
+                                let _ = client_publish(&client, &topic_request, &response).await;
+                            },
+                            CloudEventCmd::GetTgAOEStatus => {
+                                let response = serde_json::to_string(&do_get_aoe_status(msg).await).unwrap();
+                                let _ = client_publish(&client, &topic_request, &response).await;
+                            }
+                        }
+                    };
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    log::error!("do cloud_event error: {:?}", e);
+                    break;
+                }
+            }
+        }
+    });
+    Ok(())
+}
+
+fn do_get_plcc_config() -> CloudEventResponse {
+    let env = Env::get_env(ADAPTER_NAME);
+    let result_dir = env.get_result_dir();
+    let point_dir = env.get_point_dir();
+    let transport_dir = env.get_transport_dir();
+    let aoe_dir = env.get_aoe_dir();
+    let file_name_points = format!("{result_dir}/{point_dir}");
+    let file_name_transports = format!("{result_dir}/{transport_dir}");
+    let file_name_aoes = format!("{result_dir}/{aoe_dir}");
+    let mut points = None;
+    let mut transports = None;
+    let mut aoes = None;
+    if let Ok(file) = File::open(file_name_points) {
+        let reader = BufReader::new(file);
+        match serde_json::from_reader::<_, MyPoints>(reader) {
+            Ok(my_points) => {
+                points = my_points.points;
+            },
+            Err(_) => {}
+        }
+    }
+    if let Ok(file) = File::open(file_name_transports) {
+        let reader = BufReader::new(file);
+        match serde_json::from_reader::<_, MyTransports>(reader) {
+            Ok(my_transports) => {
+                transports = my_transports.transports;
+            },
+            Err(_) => {}
+        }
+    }
+    if let Ok(file) = File::open(file_name_aoes) {
+        let reader = BufReader::new(file);
+        match serde_json::from_reader::<_, MyAoes>(reader) {
+            Ok(my_aoes) => {
+                aoes = my_aoes.aoes;
+            },
+            Err(_) => {}
+        }
+    }
+    let time = Local::now().timestamp_millis();
+    CloudEventResponse {
+        token: time.to_string(),
+        time: generate_current_time(),
+        msg_info: "".to_string(),
+        data: CloudEventResponseBody {
+            points,
+            transports,
+            aoes,
+            aoes_status: None,
+            code: 200,
+            msg: "".to_string(),
+        }
+    }
+}
+
+async fn do_aoe_control(cloud_event: CloudEventRequest) -> CloudEventResponse {
+    let data = 'result: {
+        if let Some(body) = cloud_event.body {
+            if let Some(mut aoes_status) = body.aoes_status {
+                match query_aoe_mapping().await {
+                    Ok(aoe_mapping) => {
+                        for status in aoes_status.iter_mut() {
+                            if let Some(north_aoe_id) = aoe_mapping.get(&status.aoe_id) {
+                                status.aoe_id = *north_aoe_id;
+                            } else {
+                                break 'result get_aoe_status_body(None, 502, "未找到北向aoe_id".to_string());
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        break 'result get_aoe_status_body(None, 501, e.msg);
+                    }
+                }
+                let aoe_action = aoes_status.iter().map(|status| {
+                    match status.aoe_status {
+                        0 => {
+                            AoeAction::StopAoe(status.aoe_id)
+                        },
+                        _ => {
+                            AoeAction::StartAoe(status.aoe_id)
+                        }
+                    }
+                }).collect::<Vec<AoeAction>>();
+                match do_aoe_action(AoeControl { AoeActions: aoe_action }).await {
+                    Ok(_) => {
+                        get_aoe_status_body(Some(aoes_status), 200, "".to_string())
+                    }
+                    Err(e) => get_aoe_status_body(None, 501, e.msg)
+                }
+            } else {
+                get_aoe_status_body(None, 501, "body.aoes_status不能为空".to_string())
+            }
+        } else {
+            get_aoe_status_body(None, 501, "body不能为空".to_string())
+        }
+    };
+    let time = Local::now().timestamp_millis();
+    CloudEventResponse {
+        token: time.to_string(),
+        time: generate_current_time(),
+        msg_info: "".to_string(),
+        data,
+    }
+}
+
+async fn do_get_aoe_status(cloud_event: CloudEventRequest) -> CloudEventResponse {
+    let (aoes_status, code, msg) = 'result: {
+        match do_query_aoe_status().await {
+            Ok(mut aoes_status) => {
+                match query_aoe_mapping().await {
+                    Ok(aoe_mapping) => {
+                        for status in aoes_status.iter_mut() {
+                            if let Some(north_aoe_id) = aoe_mapping.get(&status.aoe_id) {
+                                status.aoe_id = *north_aoe_id;
+                            } else {
+                                break 'result (None, 502, "未找到北向aoe_id".to_string());
+                            }
+                        }
+                        if let Some(body) = cloud_event.body {
+                            if let Some(aoes_id) = body.aoes_id {
+                                let b_set: HashSet<u64> = aoes_id.into_iter().collect();
+                                aoes_status.retain(|x| b_set.contains(&x.aoe_id));
+                            }
+                        };
+                        (Some(aoes_status), 200, "".to_string())
+                    },
+                    Err(e) => {
+                        (None, 502, e.msg)
+                    }
+                }
+            },
+            Err(e) => {
+                (None, 503, e.msg)
+            }
+        }
+    };
+    let time = Local::now().timestamp_millis();
+    CloudEventResponse {
+        token: time.to_string(),
+        time: generate_current_time(),
+        msg_info: "".to_string(),
+        data: CloudEventResponseBody {
+            points: None,
+            transports: None,
+            aoes: None,
+            aoes_status,
+            code,
+            msg,
+        },
+    }
+}
+
+fn get_aoe_status_body(aoes_status: Option<Vec<CloudEventAoeStatus>>, code: u64, msg: String) -> CloudEventResponseBody {
+    CloudEventResponseBody {
+        points: None,
+        transports: None,
+        aoes: None,
+        aoes_status,
+        code,
+        msg,
     }
 }
 

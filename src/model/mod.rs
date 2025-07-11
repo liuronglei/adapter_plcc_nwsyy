@@ -20,13 +20,14 @@ pub mod south;
 pub mod datacenter;
 
 pub fn points_to_south(points: MyPoints, old_point_mapping: &HashMap<String, u64>) -> Result<(Vec<Measurement>, HashMap<String, u64>, HashMap<String, PointParam>, HashMap<String, bool>), AdapterErr> {
-    let mut points = points.points;
-    if points.is_empty() {
+    let points = points.points;
+    if points.is_none() {
         return Err(AdapterErr {
             code: ErrCode::PointIsEmpty,
             msg: "测点列表不能为空".to_string(),
         });
     }
+    let mut points = points.unwrap();
     let mut points_result = vec![];
     let mut mapping_result = HashMap::new();
     let mut point_param = HashMap::new();
@@ -386,22 +387,24 @@ pub fn aoes_to_south(aoes: MyAoes, points_mapping: &HashMap<String, u64>, curren
     let mut aoes_result = vec![];
     let mut aoes_mapping = HashMap::new();
     let mut current_id = current_id;
-    for a in aoes.aoes {
-        current_id = current_id + 1;
-        let trigger_type = trigger_type_to_south(a.trigger_type)?;
-        let variables = variables_to_south(a.variables)?;
-        let events = events_to_south(current_id, a.events)?;
-        let actions = actions_to_south(current_id, a.actions)?;
-        let aoe = AoeModel {
-            id: current_id,
-            name: a.name,
-            events,
-            actions,
-            trigger_type,
-            variables,
-        };
-        aoes_result.push(aoe);
-        aoes_mapping.insert(current_id, a.id);
+    if let Some(aoes) = aoes.aoes {
+        for a in aoes {
+            current_id = current_id + 1;
+            let trigger_type = trigger_type_to_south(a.trigger_type)?;
+            let variables = variables_to_south(a.variables)?;
+            let events = events_to_south(current_id, a.events)?;
+            let actions = actions_to_south(current_id, a.actions)?;
+            let aoe = AoeModel {
+                id: current_id,
+                name: a.name,
+                events,
+                actions,
+                trigger_type,
+                variables,
+            };
+            aoes_result.push(aoe);
+            aoes_mapping.insert(current_id, a.id);
+        }
     }
     Ok((aoes_result, aoes_mapping))
 }
@@ -725,43 +728,44 @@ fn get_nlp(my_programming: MyProgramming) -> Result<NLP, AdapterErr> {
     }
 }
 
-fn replace_point_for_aoe(aoes: MyAoes, points_mapping: &HashMap<String, u64>) -> Result<MyAoes, AdapterErr> {
-    let mut aoes = aoes.aoes;
-    for aoe in aoes.iter_mut() {
-        let mut new_variables = vec![];
-        for (key, value) in &aoe.variables {
-            let key = replace_point(key, points_mapping)?;
-            let value = replace_point(value, points_mapping)?;
-            new_variables.push((key, value));
+fn replace_point_for_aoe(mut aoes: MyAoes, points_mapping: &HashMap<String, u64>) -> Result<MyAoes, AdapterErr> {
+    if let Some(ref mut aoes) = aoes.aoes {
+        for aoe in aoes.iter_mut() {
+            let mut new_variables = vec![];
+            for (key, value) in &aoe.variables {
+                let key = replace_point(key, points_mapping)?;
+                let value = replace_point(value, points_mapping)?;
+                new_variables.push((key, value));
+            }
+            aoe.variables = new_variables;
+            let mut new_events = vec![];
+            for mut event in aoe.events.clone() {
+                event.expr = replace_point(&event.expr, points_mapping)?;
+                new_events.push(event);
+            }
+            aoe.events = new_events;
+            let mut new_actions = vec![];
+            for mut edge in aoe.actions.clone() {
+                let new_action = match edge.action {
+                    MyEigAction::None(str) => MyEigAction::None(str),
+                    MyEigAction::SetPoints(my_set_points) => MyEigAction::SetPoints(replace_point_for_set_points(my_set_points, points_mapping)?),
+                    MyEigAction::SetPointsWithCheck(my_set_points) => MyEigAction::SetPointsWithCheck(replace_point_for_set_points(my_set_points, points_mapping)?),
+                    MyEigAction::SetPoints2(my_set_points) => MyEigAction::SetPoints2(replace_point_for_set_points(my_set_points, points_mapping)?),
+                    MyEigAction::SetPointsWithCheck2(my_set_points) => MyEigAction::SetPointsWithCheck2(replace_point_for_set_points(my_set_points, points_mapping)?),
+                    MyEigAction::Solve(my_solver) => MyEigAction::Solve(replace_point_for_solver(my_solver, points_mapping)?),
+                    MyEigAction::Nlsolve(my_solver) => MyEigAction::Nlsolve(replace_point_for_solver(my_solver, points_mapping)?),
+                    MyEigAction::Milp(my_programming) => MyEigAction::Milp(replace_point_for_programming(my_programming, points_mapping)?),
+                    MyEigAction::SimpleMilp(my_programming) => MyEigAction::SimpleMilp(replace_point_for_programming(my_programming, points_mapping)?),
+                    MyEigAction::Nlp(my_programming) => MyEigAction::Nlp(replace_point_for_programming(my_programming, points_mapping)?),
+                    MyEigAction::Url(url) => MyEigAction::Url(url),
+                };
+                edge.action = new_action;
+                new_actions.push(edge);
+            }
+            aoe.actions = new_actions;
         }
-        aoe.variables = new_variables;
-        let mut new_events = vec![];
-        for mut event in aoe.events.clone() {
-            event.expr = replace_point(&event.expr, points_mapping)?;
-            new_events.push(event);
-        }
-        aoe.events = new_events;
-        let mut new_actions = vec![];
-        for mut edge in aoe.actions.clone() {
-            let new_action = match edge.action {
-                MyEigAction::None(str) => MyEigAction::None(str),
-                MyEigAction::SetPoints(my_set_points) => MyEigAction::SetPoints(replace_point_for_set_points(my_set_points, points_mapping)?),
-                MyEigAction::SetPointsWithCheck(my_set_points) => MyEigAction::SetPointsWithCheck(replace_point_for_set_points(my_set_points, points_mapping)?),
-                MyEigAction::SetPoints2(my_set_points) => MyEigAction::SetPoints2(replace_point_for_set_points(my_set_points, points_mapping)?),
-                MyEigAction::SetPointsWithCheck2(my_set_points) => MyEigAction::SetPointsWithCheck2(replace_point_for_set_points(my_set_points, points_mapping)?),
-                MyEigAction::Solve(my_solver) => MyEigAction::Solve(replace_point_for_solver(my_solver, points_mapping)?),
-                MyEigAction::Nlsolve(my_solver) => MyEigAction::Nlsolve(replace_point_for_solver(my_solver, points_mapping)?),
-                MyEigAction::Milp(my_programming) => MyEigAction::Milp(replace_point_for_programming(my_programming, points_mapping)?),
-                MyEigAction::SimpleMilp(my_programming) => MyEigAction::SimpleMilp(replace_point_for_programming(my_programming, points_mapping)?),
-                MyEigAction::Nlp(my_programming) => MyEigAction::Nlp(replace_point_for_programming(my_programming, points_mapping)?),
-                MyEigAction::Url(url) => MyEigAction::Url(url),
-            };
-            edge.action = new_action;
-            new_actions.push(edge);
-        }
-        aoe.actions = new_actions;
     }
-    Ok(MyAoes{aoes})
+    Ok(MyAoes{aoes: aoes.aoes, add: None, edit: None, delete: None})
 }
 
 fn replace_point_for_set_points(my_set_points: MySetPoints, points_mapping: &HashMap<String, u64>) -> Result<MySetPoints, AdapterErr> {

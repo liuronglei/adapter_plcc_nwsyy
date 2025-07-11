@@ -12,6 +12,9 @@ pub const URL_TRANSPORTS: &str = "api/v1/transports/models";
 pub const URL_AOES: &str = "api/v1/aoes/models";
 pub const URL_AOE_RESULTS: &str = "api/v1/aoe_results";
 pub const URL_RESET: &str = "api/v1/controls/reset";
+pub const URL_UNRUN_AOES: &str = "api/v1/unrun_aoes";
+pub const URL_RUNNING_AOES: &str = "api/v1/running_aoes";
+pub const URL_AOE_CONTROL: &str = "api/v1/controls/aoes";
 
 #[repr(u16)]
 #[derive(Debug)]

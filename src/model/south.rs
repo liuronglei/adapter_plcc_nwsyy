@@ -1404,3 +1404,30 @@ pub enum ActionExeResult {
     Success,
     Failed,
 }
+
+/**
+ * @api {AoeAction} /AoeAction AoeAction
+ * @apiGroup A_Enum
+ * @apiSuccess {Object} StartAoe 开始AOE，{"StartAoe": u64}
+ * @apiSuccess {Object} StopAoe 停止AOE，{"StopAoe": u64}
+ * @apiSuccess {Object} UpdateAoe 更新AOE，{"UpdateAoe": AoeModel}
+ * @apiSuccess {Object} UpdateAoeCsv 更新AOE（字节数组），{"UpdateAoeCsv": u8[]}
+ */
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum AoeAction {
+    StartAoe(u64),
+    StopAoe(u64),
+    UpdateAoe(AoeModel),
+    UpdateAoeCsv(Vec<u8>),
+}
+
+/**
+ * @api {AoeControl} /AoeControl AoeControl
+ * @apiGroup A_Object
+ * @apiSuccess {AoeAction[]} AoeActions AOE指令列表
+ */
+#[allow(non_snake_case)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AoeControl {
+    pub AoeActions: Vec<AoeAction>,
+}
