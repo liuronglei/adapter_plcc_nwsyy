@@ -44,6 +44,7 @@ pub enum ErrCode {
     ModelRegisterErr = 541,
     QueryRegisterDevErr = 542,
     InternalErr = 543,
+    IoErr = 544,
 }
 
 pub struct AdapterErr {

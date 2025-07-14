@@ -485,6 +485,7 @@ pub async fn cloud_event() -> Result<(), AdapterErr> {
     let mqtt_server_port = env.get_mqtt_server_port();
     let mut mqttoptions = MqttOptions::new("plcc_event", &mqtt_server, mqtt_server_port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
+    mqttoptions.set_max_packet_size(1024 * 1024 * 100, 1024 * 1024 * 100);
     // mqttoptions.set_credentials("username", "password");
     let topic_request = format!("/ext.syy.phSmc/{app_name}/S-smclink/F-PlccEvent");
     let topic_response = format!("/{app_name}/ext.syy.phSmc/S-smclink/F-PlccEvent");

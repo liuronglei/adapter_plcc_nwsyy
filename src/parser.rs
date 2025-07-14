@@ -2,8 +2,8 @@ use actix_web::{get, HttpResponse, web};
 use async_channel::{bounded, Sender};
 use log::{info, warn};
 use rocksdb::DB;
-use std::fs::File;
-use std::io::{BufReader, Write};
+use std::fs::{File, read_to_string, write};
+use std::io::{self, BufReader, Write};
 use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
@@ -78,8 +78,10 @@ impl ParserManager {
         let aoe_dir = env.get_aoe_dir();
         match op {
             ParserOperation::UpdateJson(sender) => {
-                let (mut result_code, mut has_err) = (ErrCode::Success, false);
-                match self.join_points_json(&json_dir, &result_dir, &point_dir).await {
+                let (mut result_code, mut has_err, temp_prefix) = (ErrCode::Success, false, "temp_");
+                let (temp_point_dir, temp_transport_dir, temp_aoe_dir) = 
+                    (format!("{temp_prefix}{point_dir}"), format!("{temp_prefix}{transport_dir}"), format!("{temp_prefix}{aoe_dir}"));
+                match self.join_points_json(&json_dir, &result_dir, &point_dir, &temp_point_dir).await {
                     Ok(_) => {}
                     Err(e) => {
                         result_code = e.code;
@@ -87,7 +89,7 @@ impl ParserManager {
                     }
                 }
                 if !has_err {
-                    match self.join_transports_json(&json_dir, &result_dir, &transport_dir).await {
+                    match self.join_transports_json(&json_dir, &result_dir, &transport_dir, &temp_transport_dir).await {
                         Ok(_) => {}
                         Err(e) => {
                             result_code = e.code;
@@ -96,7 +98,7 @@ impl ParserManager {
                     }
                 }
                 if !has_err {
-                    match self.join_aoes_json(&json_dir, &result_dir, &aoe_dir).await {
+                    match self.join_aoes_json(&json_dir, &result_dir, &aoe_dir, &temp_aoe_dir).await {
                         Ok(_) => {}
                         Err(e) => {
                             result_code = e.code;
@@ -105,14 +107,25 @@ impl ParserManager {
                     }
                 }
                 if !has_err {
-                    result_code = self.start_parser(result_dir, point_dir, transport_dir, aoe_dir).await;
+                    result_code = self.start_parser(&json_dir, &temp_point_dir, &temp_transport_dir, &temp_aoe_dir).await;
+                    match result_code {
+                        ErrCode::Success => {
+                            if let Err(_) = self.write_into_result(
+                                &json_dir, &point_dir, &transport_dir, &aoe_dir,
+                                &result_dir, &temp_point_dir, &temp_transport_dir, &temp_aoe_dir
+                            ) {
+                                result_code = ErrCode::IoErr;
+                            }
+                        },
+                        _ => {}
+                    }
                 }
                 if let Err(e) = sender.send(result_code as u16).await {
                     warn!("!!Failed to send update json : {e:?}");
                 }
             }
             ParserOperation::RecoverJson(sender) => {
-                let result_code = self.start_parser(result_dir, point_dir, transport_dir, aoe_dir).await;
+                let result_code = self.start_parser(&result_dir, &point_dir, &transport_dir, &aoe_dir).await;
                 if let Err(e) = sender.send(result_code as u16).await {
                     warn!("!!Failed to send recover json : {e:?}");
                 }
@@ -136,10 +149,11 @@ impl ParserManager {
         }
     }
 
-    async fn join_points_json(&self, parser_path: &str, result_path: &str, point_dir: &str) -> Result<(), AdapterErr> {
+    async fn join_points_json(&self, parser_path: &str, result_path: &str, point_dir: &str, temp_point_dir: &str) -> Result<(), AdapterErr> {
         let file_name_points = format!("{parser_path}/{point_dir}");
         let result_name_points = format!("{result_path}/{point_dir}");
-        if let Ok(file) = File::open(file_name_points) {
+        let temp_name_points = format!("{parser_path}/{temp_point_dir}");
+        if let Ok(file) = File::open(&file_name_points) {
             let reader = BufReader::new(file);
             match serde_json::from_reader::<_, MyPoints>(reader) {
                 Ok(points) => {
@@ -195,7 +209,7 @@ impl ParserManager {
                             }
                         }
                     }
-                    let mut points_file = File::create(&result_name_points).unwrap();
+                    let mut points_file = File::create(&temp_name_points).unwrap();
                     points_file.write_all(serde_json::to_string(&old_points).unwrap().as_bytes()).unwrap();
                     Ok(())
                 },
@@ -212,10 +226,11 @@ impl ParserManager {
         }
     }
 
-    async fn join_transports_json(&self, parser_path: &str, result_path: &str, transport_dir: &str) -> Result<(), AdapterErr> {
+    async fn join_transports_json(&self, parser_path: &str, result_path: &str, transport_dir: &str, temp_transport_dir: &str) -> Result<(), AdapterErr> {
         let file_name_transports = format!("{parser_path}/{transport_dir}");
         let result_name_transports = format!("{result_path}/{transport_dir}");
-        if let Ok(file) = File::open(file_name_transports) {
+        let temp_name_transports = format!("{parser_path}/{temp_transport_dir}");
+        if let Ok(file) = File::open(&file_name_transports) {
             let reader = BufReader::new(file);
             match serde_json::from_reader::<_, MyTransports>(reader) {
                 Ok(transports) => {
@@ -271,7 +286,7 @@ impl ParserManager {
                             }
                         }
                     }
-                    let mut transports_file = File::create(&result_name_transports).unwrap();
+                    let mut transports_file = File::create(&temp_name_transports).unwrap();
                     transports_file.write_all(serde_json::to_string(&old_transports).unwrap().as_bytes()).unwrap();
                     Ok(())
                 },
@@ -288,10 +303,11 @@ impl ParserManager {
         }
     }
 
-    async fn join_aoes_json(&self, parser_path: &str, result_path: &str, aoe_dir: &str) -> Result<(), AdapterErr> {
+    async fn join_aoes_json(&self, parser_path: &str, result_path: &str, aoe_dir: &str, temp_aoe_dir: &str) -> Result<(), AdapterErr> {
         let file_name_aoes = format!("{parser_path}/{aoe_dir}");
         let result_name_aoes = format!("{result_path}/{aoe_dir}");
-        if let Ok(file) = File::open(file_name_aoes) {
+        let temp_name_aoes = format!("{parser_path}/{temp_aoe_dir}");
+        if let Ok(file) = File::open(&file_name_aoes) {
             let reader = BufReader::new(file);
             match serde_json::from_reader::<_, MyAoes>(reader) {
                 Ok(aoes) => {
@@ -347,7 +363,7 @@ impl ParserManager {
                             }
                         }
                     }
-                    let mut aoes_file = File::create(&result_name_aoes).unwrap();
+                    let mut aoes_file = File::create(&temp_name_aoes).unwrap();
                     aoes_file.write_all(serde_json::to_string(&old_aoes).unwrap().as_bytes()).unwrap();
                     Ok(())
                 },
@@ -364,7 +380,27 @@ impl ParserManager {
         }
     }
 
-    async fn start_parser(&self, path: String, point_dir: String, transport_dir: String, aoe_dir: String) -> ErrCode {
+    fn write_into_result(
+        &self, 
+        parser_path: &str, point_dir: &str, transport_dir: &str, aoe_dir: &str,
+        result_path: &str, temp_point_dir: &str, temp_transport_dir: &str, temp_aoe_dir: &str
+    ) -> io::Result<()> {
+        let result_name_points = format!("{result_path}/{point_dir}");
+        let result_name_transports = format!("{result_path}/{transport_dir}");
+        let result_name_aoes = format!("{result_path}/{aoe_dir}");
+        let temp_name_points = format!("{parser_path}/{temp_point_dir}");
+        let temp_name_transports = format!("{parser_path}/{temp_transport_dir}");
+        let temp_name_aoes = format!("{parser_path}/{temp_aoe_dir}");
+        let content = read_to_string(temp_name_points)?;
+        write(result_name_points, content)?;
+        let content = read_to_string(temp_name_transports)?;
+        write(result_name_transports, content)?;
+        let content = read_to_string(temp_name_aoes)?;
+        write(result_name_aoes, content)?;
+        Ok(())
+    }
+
+    async fn start_parser(&self, path: &str, point_dir: &str, transport_dir: &str, aoe_dir: &str) -> ErrCode {
         let file_name_points = format!("{path}/{point_dir}");
         let file_name_transports = format!("{path}/{transport_dir}");
         let file_name_aoes = format!("{path}/{aoe_dir}");
