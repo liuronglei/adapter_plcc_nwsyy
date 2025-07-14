@@ -44,7 +44,8 @@ pub enum ErrCode {
     ModelRegisterErr = 541,
     QueryRegisterDevErr = 542,
     InternalErr = 543,
-    IoErr = 544,
+    PlccAdapterNotFound = 544,
+    IoErr = 545,
 }
 
 pub struct AdapterErr {
