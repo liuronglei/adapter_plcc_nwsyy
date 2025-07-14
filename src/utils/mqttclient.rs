@@ -1,17 +1,17 @@
 use std::fs::File;
 use std::io::BufReader;
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use rumqttc::{AsyncClient, Event, Incoming, MqttOptions, QoS};
 use tokio::time::{timeout, Duration};
 use tokio::sync::oneshot;
 use chrono::{Local, TimeZone};
 
-use crate::model::north::{MyAoes, MyPbAoeResult, MyPoints, MyTransports};
-use crate::model::south::{AoeControl, AoeAction};
-use crate::utils::register_result;
 use crate::{AdapterErr, ErrCode, ADAPTER_NAME};
-use crate::model::datacenter::*;
 use crate::env::Env;
+use crate::model::datacenter::*;
+use crate::model::north::{MyAoes, MyPbAoeResult, MyPoints, MyTransports, MyTransport};
+use crate::model::south::{AoeControl, AoeAction};
+use crate::utils::{register_result, get_point_attr};
 use crate::utils::localapi::{query_dev_mapping, query_aoe_mapping};
 use crate::utils::plccapi::{do_query_aoe_status, do_aoe_action};
 
@@ -39,7 +39,7 @@ pub async fn client_publish(client: &AsyncClient, topic: &str, payload: &str) ->
     }
 }
 
-pub async fn do_query_dev(dev_ids: Vec<String>) -> Result<Vec<QueryDevResponseBody>, AdapterErr> {
+pub async fn do_query_dev(transports: &Vec<MyTransport>) -> Result<Vec<QueryDevResponseBody>, AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
@@ -48,13 +48,15 @@ pub async fn do_query_dev(dev_ids: Vec<String>) -> Result<Vec<QueryDevResponseBo
     let mut mqttoptions = MqttOptions::new("plcc_query_dev", &mqtt_server, mqtt_server_port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     // mqttoptions.set_credentials("username", "password");
-    let topic_request_query_dev = format!("/ext.syy.subota/{app_name}/S-otaservice/F-GetNodeInfo");
-    let topic_response_query_dev = format!("/{app_name}/ext.syy.subota/S-otaservice/F-GetNodeInfo");
+    
+    let topic_request_query_dev = format!("/sys.iot/{app_name}/S-otaservice/F-GetDCAttr");
+    let topic_response_query_dev = format!("/{app_name}/sys.iot/S-otaservice/F-GetDCAttr");
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
     // 订阅查询消息返回
     client_subscribe(&client, &topic_response_query_dev).await?;
     // 发布查询消息
-    let body = generate_query_dev(dev_ids);
+    let query_dev_bodys = build_query_dev_bodys(transports);
+    let body = generate_query_dev(query_dev_bodys);
     let payload = serde_json::to_string(&body).unwrap();
     client_publish(&client, &topic_request_query_dev, &payload).await?;
     // 处理订阅消息
@@ -70,17 +72,18 @@ pub async fn do_query_dev(dev_ids: Vec<String>) -> Result<Vec<QueryDevResponseBo
                                 let mut has_error = false;
                                 let mut result = vec![];
                                 for data in msg.devices.clone() {
-                                    let data_clone = data.clone();
-                                    if data.status.to_lowercase() == "true".to_string() && data.guid.is_some() {
-                                        result.push(data_clone);
-                                    } else {
-                                        has_error = true;
+                                    for dev in &data.devs {
+                                        if data.service_id.as_str() == "serviceNotExist" || !dev.not_found.is_empty() {
+                                            has_error = true;
+                                            break;
+                                        }
                                     }
+                                    result.push(data);
                                 }
                                 if has_error {
                                     tx.send(Err(AdapterErr {
                                         code: ErrCode::QueryDevStatusErr,
-                                        msg: format!("查询设备GUID，返回status为false：: {:?}", msg),
+                                        msg: format!("查询设备信息报错，有部分属性在数据中心未找到： {:?}", msg),
                                     }))
                                 } else {
                                     tx.send(Ok(result))
@@ -89,11 +92,11 @@ pub async fn do_query_dev(dev_ids: Vec<String>) -> Result<Vec<QueryDevResponseBo
                             Err(e) => tx.send(
                                 Err(AdapterErr {
                                     code: ErrCode::QueryDevDeserializeErr,
-                                    msg: format!("查询设备GUID，返回字符串反序列化失败: {:?}", e),
+                                    msg: format!("查询设备信息报错，返回字符串反序列化失败: {:?}", e),
                                 }))
                         };
                         if send_result.is_err() {
-                            log::error!("do dev_guid error: receive mqtt massage failed");
+                            log::error!("do query_dev_info error: receive mqtt massage failed");
                         }
                         break;
                     }
@@ -732,12 +735,14 @@ fn generate_current_time() -> String {
 
 fn generate_query_data(devs: &Vec<QueryDevResponseBody>) -> DataQuery {
     let time = Local::now().timestamp_millis();
-    let body = devs.iter().map(|v|
-        DataQueryBody {
-            dev: format!("{}_{}", v.model.clone().unwrap_or("".to_string()), v.devID),
-            totalcall: "1".to_string(),
-            body: vec![],
-        }
+    let body = devs.iter().flat_map(|dev|
+        dev.devs.iter().map(|v|{
+            DataQueryBody {
+                dev: format!("{}_{}", v.model.clone(), v.dev_guid),
+                totalcall: "1".to_string(),
+                body: vec![],
+            }
+        }).collect::<Vec<DataQueryBody>>()
     ).collect::<Vec<DataQueryBody>>();
     DataQuery {
         token: time.to_string(),
@@ -755,12 +760,12 @@ fn generate_query_register_dev() -> QueryRegisterDev {
     }
 }
 
-fn generate_query_dev(dev_ids: Vec<String>) -> QueryDev {
+fn generate_query_dev(query_dev_bodys: Vec<QueryDevBody>) -> QueryDev {
     let time = Local::now().timestamp_millis();
     QueryDev {
         token: time.to_string(),
         time: generate_current_time(),
-        devices: dev_ids,
+        devices: query_dev_bodys,
     }
 }
 
@@ -851,6 +856,47 @@ fn generate_time(ts_millis: Option<u64>) -> String {
     }
 }
 
+fn build_query_dev_bodys(transports: &Vec<MyTransport>) -> Vec<QueryDevBody> {
+    let mut map: HashMap<(String, String), Vec<String>> = HashMap::new();
+    for transport in transports {
+        let all_points = transport
+            .point_ycyx_ids()
+            .into_iter()
+            .chain(transport.point_yt_ids())
+            .chain(transport.point_yk_ids());
+        for point in all_points {
+            if let Some((dev_id, service_id, attr)) = get_point_attr(&point) {
+                map.entry((dev_id, service_id)).or_default().push(attr);
+            }
+        }
+    }
+    map.into_iter()
+        .map(|((dev_id, service_id), mut attrs)| {
+            attrs.sort();
+            attrs.dedup();
+            QueryDevBody {
+                dev_id,
+                service_id,
+                attrs,
+            }
+        }).collect()
+}
+
+pub fn build_dev_mapping(devs: &Vec<QueryDevResponseBody>) -> HashMap<(String, String, String), (String, String, String)> {
+    let mut result = HashMap::new();
+    for data in devs {
+        for dev in &data.devs {
+            for attr in &dev.attrs {
+                result.insert(
+                    (data.dev_id.clone(), data.service_id.clone(), attr.iot.clone()),
+                    (dev.dev_guid.clone(), dev.model.clone(), attr.dc.clone())
+                );
+            }
+        }
+    }
+    result
+}
+
 #[tokio::test]
 async fn test_mqtt_response() {
     Env::init(ADAPTER_NAME);
@@ -889,20 +935,35 @@ async fn test_mqtt_response() {
         }).unwrap();
         let _ = client_publish(&client, &tp, &body).await;
 
-        let tp = format!("/{app_name}/ext.syy.subota/S-otaservice/F-GetNodeInfo");
+        let tp = format!("/{app_name}/sys.iot/S-otaservice/F-GetDCAttr");
         let body = serde_json::to_string(&QueryDevResponse {
             token: "".to_string(),
             time: "".to_string(),
             devices: vec![
-                QueryDevResponseBody { devID: "FE80-3728-DF9B-6076-3872-7525-9B31-F77F".to_string(), status: "true".to_string(),
-                    addr: Some("".to_string()), model: Some("".to_string()), desc: Some("".to_string()), port: Some("".to_string()),
-                    guid: Some("guid1".to_string()), reason: Some("".to_string()) },
-                QueryDevResponseBody { devID: "FE80-4D2F-E64F-B696-5206-26A0-4B37-DD6E".to_string(), status: "true".to_string(),
-                    addr: Some("".to_string()), model: Some("".to_string()), desc: Some("".to_string()), port: Some("".to_string()),
-                    guid: Some("guid2".to_string()), reason: Some("".to_string()) },
-                QueryDevResponseBody { devID: "FE80-90D1-B2E2-5A07-B94D-FDA2-80E0-939A".to_string(), status: "true".to_string(),
-                    addr: Some("".to_string()), model: Some("".to_string()), desc: Some("".to_string()), port: Some("".to_string()),
-                    guid: Some("guid3".to_string()), reason: Some("".to_string()) }
+                QueryDevResponseBody {
+                    dev_id: "FE80-3728-DF9B-6076-3872-7525-9B31-F77F".to_string(),
+                    service_id: "service_id1".to_string(),
+                    devs: vec![
+                        QueryDevResponseBodyDev { dev_guid: "guid1".to_string(), addr: "".to_string(), model: "model1".to_string(),
+                            desc: "".to_string(), port: "".to_string(), attrs: vec![{QueryDevResponseBodyMap { iot: "tgUa".to_string(), dc: "Ua".to_string() }}], not_found: vec![], reason: "".to_string() }
+                    ],
+                },
+                QueryDevResponseBody {
+                    dev_id: "FE80-4D2F-E64F-B696-5206-26A0-4B37-DD6E".to_string(),
+                    service_id: "service_id1".to_string(),
+                    devs: vec![
+                        QueryDevResponseBodyDev { dev_guid: "guid2".to_string(), addr: "".to_string(), model: "model2".to_string(),
+                            desc: "".to_string(), port: "".to_string(), attrs: vec![{QueryDevResponseBodyMap { iot: "tgUb".to_string(), dc: "Ub".to_string() }}], not_found: vec![], reason: "".to_string() }
+                    ],
+                },
+                QueryDevResponseBody {
+                    dev_id: "FE80-90D1-B2E2-5A07-B94D-FDA2-80E0-939A".to_string(),
+                    service_id: "service_id1".to_string(),
+                    devs: vec![
+                        QueryDevResponseBodyDev { dev_guid: "guid3".to_string(), addr: "".to_string(), model: "model1".to_string(),
+                            desc: "".to_string(), port: "".to_string(), attrs: vec![{QueryDevResponseBodyMap { iot: "tgUc".to_string(), dc: "Uc".to_string() }}], not_found: vec![], reason: "".to_string() }
+                    ],
+                },
             ],
         }).unwrap();
         let _ = client_publish(&client, &tp, &body).await;

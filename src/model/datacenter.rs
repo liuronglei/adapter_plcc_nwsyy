@@ -72,7 +72,16 @@ pub struct DataQueryBody {
 pub struct QueryDev {
     pub token: String,
     pub time: String,
-    pub devices: Vec<String>,
+    pub devices: Vec<QueryDevBody>,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct QueryDevBody {
+    #[serde(rename = "devId")]
+    pub dev_id: String,
+    #[serde(rename = "serviceId")]
+    pub service_id: String,
+    pub attrs: Vec<String>,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
@@ -82,24 +91,34 @@ pub struct QueryDevResponse {
     pub devices: Vec<QueryDevResponseBody>,
 }
 
-#[allow(non_snake_case)]
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct QueryDevResponseBody {
-    pub devID: String,
-    pub status: String,
-    // 以下字段是可选的（不是所有设备都有这些字段）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub addr: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub desc: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub port: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub guid: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
+    #[serde(rename = "devId")]
+    pub dev_id: String,
+    #[serde(rename = "serviceId")]
+    pub service_id: String,
+    pub devs: Vec<QueryDevResponseBodyDev>,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct QueryDevResponseBodyDev {
+    #[serde(rename = "devGuid")]
+    pub dev_guid: String,
+    pub addr: String,
+    pub model: String,
+    pub desc: String,
+    pub port: String,
+    pub attrs: Vec<QueryDevResponseBodyMap>,
+    #[serde(rename = "notFound")]
+    pub not_found: Vec<String>,
+    pub reason: String,
+}
+
+#[allow(non_snake_case)]
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct QueryDevResponseBodyMap {
+    pub iot: String,
+    pub dc: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

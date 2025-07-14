@@ -27,6 +27,18 @@ pub fn get_north_tag(north_point: &str) -> Option<String> {
     None
 }
 
+pub fn get_point_attr(north_point: &str) -> Option<(String, String, String)> {
+    let re = Regex::new(r"\$\{([^}]+)\}").unwrap();
+    if let Some(captures) = re.captures(north_point) {
+        let var_name = &captures[1];
+        let words = var_name.split(".").collect::<Vec<&str>>();
+        if words.len() == 3 {
+            return Some((words[0].to_string(), words[1].to_string(), words[2].to_string()))
+        }
+    }
+    None
+}
+
 fn do_replace_point(input: &str, points_mapping: &HashMap<String, u64>, without_prefix: bool) -> Result<String, AdapterErr> {
     let re = Regex::new(r"\$\{([^}]+)\}").unwrap();
     let (mut is_success, mut err_str) = (true, "".to_string());

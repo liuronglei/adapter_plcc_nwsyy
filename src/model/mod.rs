@@ -11,7 +11,7 @@ use south::{DataUnit, Expr};
 
 use crate::model::north::*;
 use crate::model::south::*;
-use crate::utils::{get_north_tag, replace_point, replace_point_without_prefix, get_point_tag};
+use crate::utils::{replace_point, replace_point_without_prefix, get_point_attr, get_point_tag};
 use crate::{AdapterErr, ErrCode, ADAPTER_NAME};
 use crate::env::Env;
 
@@ -92,8 +92,10 @@ pub fn points_to_south(points: MyPoints, old_point_mapping: &HashMap<String, u64
     Ok((points_result, mapping_result, point_param, point_discrete))
 }
 
-pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<String, u64>,
-        dev_guids: &HashMap<String, String>,
+pub fn transports_to_south(
+        transports: MyTransports,
+        points_mapping: &HashMap<String, u64>,
+        dev_mapping: &HashMap<(String, String, String), (String, String, String)>,
         point_param: &HashMap<String, PointParam>,
         point_discrete: &HashMap<String, bool>) -> Result<(Vec<Transport>, u64), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
@@ -129,39 +131,39 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
     let mut point_yk_index = 0;
 
     let mut current_tid = 65536_u64;
-    for (dev_id, (point_ycyx, point_yt, point_yk)) in new_transport.dev_ids_map.iter() {
-        if !dev_guids.contains_key(dev_id) {
-            return Err(AdapterErr {
-                code: ErrCode::DevGuidNotFound,
-                msg: format!("通道解析失败，找不到设备GUID：{dev_id}"),
-            });
-        }
-        let dev_guid = dev_guids.get(dev_id).unwrap();
+    for (_, (point_ycyx, point_yt, point_yk)) in new_transport.dev_ids_map.iter() {
         let points = point_ycyx.iter()
             .filter(|v|points_mapping.contains_key(*v))
             .map(|v| (*points_mapping.get(v).unwrap(), false)).collect::<Vec<(u64, bool)>>();
         point_ycyx_ids.extend(points);
         for v in point_ycyx.iter() {
             if points_mapping.contains_key(v) {
-                if let Some(tag) = get_north_tag(v) {
-                    let mut value_map = HashMap::with_capacity(1);
-                    value_map.insert("val".to_string(), point_index_ycyx);
-                    json_tags_ycyx.insert(format!("[{point_index_ycyx}]"), value_map);
-                    filter_keys_ycyx.push(vec![
-                        "body/_array/name".to_string(),
-                        "body/_array/quality".to_string(),
-                        "dev".to_string()
-                    ]);
-                    filter_values_ycyx.push(Some(vec![str_to_json_value(&tag),
-                        str_to_json_value("0"),
-                        str_to_json_value(&dev_guid)
-                    ]));
-                    filter_keys_cx.push(vec![
-                        "body/_array/body/_array/name".to_string(),
-                        "body/_array/body/_array/quality".to_string(),
-                        "body/_array/dev".to_string()
-                    ]);
-                    point_index_ycyx = point_index_ycyx + 1;
+                if let Some(dev_key) = get_point_attr(v) {
+                    if let Some((dev_guid, _, dc_attr)) = dev_mapping.get(&dev_key) {
+                        let mut value_map = HashMap::with_capacity(1);
+                        value_map.insert("val".to_string(), point_index_ycyx);
+                        json_tags_ycyx.insert(format!("[{point_index_ycyx}]"), value_map);
+                        filter_keys_ycyx.push(vec![
+                            "body/_array/name".to_string(),
+                            "body/_array/quality".to_string(),
+                            "dev".to_string()
+                        ]);
+                        filter_values_ycyx.push(Some(vec![str_to_json_value(&dc_attr),
+                            str_to_json_value("0"),
+                            str_to_json_value(&dev_guid)
+                        ]));
+                        filter_keys_cx.push(vec![
+                            "body/_array/body/_array/name".to_string(),
+                            "body/_array/body/_array/quality".to_string(),
+                            "body/_array/dev".to_string()
+                        ]);
+                        point_index_ycyx = point_index_ycyx + 1;
+                    } else {
+                        return Err(AdapterErr {
+                            code: ErrCode::TransportPointTagErr,
+                            msg: format!("通道解析失败，属性在数据中心未找到：{v}"),
+                        });
+                    }
                 } else {
                     return Err(AdapterErr {
                         code: ErrCode::TransportPointTagErr,
@@ -181,28 +183,35 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
         point_yt_ids.extend(points);
         for v in point_yt.iter() {
             if points_mapping.contains_key(v) {
-                if let Some(tag) = get_north_tag(v) {
-                    let mut value_map = HashMap::with_capacity(1);
-                    value_map.insert("val".to_string(), point_yt_index);
-                    json_tags_yt.insert(format!("[{point_yt_index}]"), value_map);
-                    filter_keys_yt.push(vec!["dev".to_string()]);
-                    filter_values_yt.push(Some(vec![str_to_json_value("0")]));
-                    let pid = *points_mapping.get(v).unwrap();
-                    let is_discrete = if let Some(is_discrete) = point_discrete.get(v) {
-                        *is_discrete
+                if let Some(dev_key) = get_point_attr(v) {
+                    if let Some((dev_guid, _, dc_attr)) = dev_mapping.get(&dev_key) {
+                        let mut value_map = HashMap::with_capacity(1);
+                        value_map.insert("val".to_string(), point_yt_index);
+                        json_tags_yt.insert(format!("[{point_yt_index}]"), value_map);
+                        filter_keys_yt.push(vec!["dev".to_string()]);
+                        filter_values_yt.push(Some(vec![str_to_json_value("0")]));
+                        let pid = *points_mapping.get(v).unwrap();
+                        let is_discrete = if let Some(is_discrete) = point_discrete.get(v) {
+                            *is_discrete
+                        } else {
+                            false
+                        };
+                        let datatype = if is_discrete {"int"} else {"float"};
+                        json_write_template_yt.insert(
+                            pid,
+                            format!("{{\"token\": \"plcc_yt\",\"timestamp\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"timeout\": \"60\",\"body\": [{{\"name\": \"{dc_attr}\",\"val\": \"\",\"unit\": \"\",\"datatype\": \"{datatype}\"}}]}}]}}")
+                        );
+                        json_write_tag_yt.insert(
+                            pid,
+                            "body/_array/body/_array/val;timestamp".to_string()
+                        );
+                        point_yt_index = point_yt_index + 1;
                     } else {
-                        false
-                    };
-                    let datatype = if is_discrete {"int"} else {"float"};
-                    json_write_template_yt.insert(
-                        pid,
-                        format!("{{\"token\": \"plcc_yt\",\"timestamp\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"timeout\": \"60\",\"body\": [{{\"name\": \"{tag}\",\"val\": \"\",\"unit\": \"\",\"datatype\": \"{datatype}\"}}]}}]}}")
-                    );
-                    json_write_tag_yt.insert(
-                        pid,
-                        "body/_array/body/_array/val;timestamp".to_string()
-                    );
-                    point_yt_index = point_yt_index + 1;
+                        return Err(AdapterErr {
+                            code: ErrCode::TransportPointTagErr,
+                            msg: format!("通道解析失败，属性在数据中心未找到：{v}"),
+                        });
+                    }
                 } else {
                     return Err(AdapterErr {
                         code: ErrCode::TransportPointTagErr,
@@ -222,30 +231,37 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
         point_yk_ids.extend(points);
         for v in point_yk.iter() {
             if points_mapping.contains_key(v) {
-                if let Some(tag) = get_north_tag(v) {
-                    let mut value_map = HashMap::with_capacity(1);
-                    value_map.insert("val".to_string(), point_yk_index);
-                    json_tags_yk.insert(format!("[{point_yk_index}]"), value_map);
-                    filter_keys_yk.push(vec!["dev".to_string()]);
-                    filter_values_yk.push(Some(vec![str_to_json_value("0")]));
-                    let pid = *points_mapping.get(v).unwrap();
-                    let (action, timeout, mtype, mode) = if let Some(param) = point_param.get(v) {
-                        (param.action.clone().unwrap_or("1".to_string()),
-                        param.timeout.clone().unwrap_or("30".to_string()),
-                        param.mtype.clone().unwrap_or("SCO".to_string()),
-                        param.mode.clone().unwrap_or("1".to_string()))
+                if let Some(dev_key) = get_point_attr(v) {
+                    if let Some((dev_guid, _, dc_attr)) = dev_mapping.get(&dev_key) {
+                        let mut value_map = HashMap::with_capacity(1);
+                        value_map.insert("val".to_string(), point_yk_index);
+                        json_tags_yk.insert(format!("[{point_yk_index}]"), value_map);
+                        filter_keys_yk.push(vec!["dev".to_string()]);
+                        filter_values_yk.push(Some(vec![str_to_json_value("0")]));
+                        let pid = *points_mapping.get(v).unwrap();
+                        let (action, timeout, mtype, mode) = if let Some(param) = point_param.get(v) {
+                            (param.action.clone().unwrap_or("1".to_string()),
+                            param.timeout.clone().unwrap_or("30".to_string()),
+                            param.mtype.clone().unwrap_or("SCO".to_string()),
+                            param.mode.clone().unwrap_or("1".to_string()))
+                        } else {
+                            ("1".to_string(), "30".to_string(), "SCO".to_string(), "1".to_string())
+                        };
+                        json_write_template_yk.insert(
+                            pid,
+                            format!("{{\"token\": \"plcc_yk\",\"time\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"name\": \"{dc_attr}\",\"type\": \"{mtype}\",\"cmd\": \"0\",\"action\": \"{action}\",\"mode\": \"{mode}\",\"timeout\": \"{timeout}\"}}]}}")
+                        );
+                        json_write_tag_yk.insert(
+                            pid,
+                            "body/_array/cmd;time".to_string()
+                        );
+                        point_yk_index = point_yk_index + 1;
                     } else {
-                        ("1".to_string(), "30".to_string(), "SCO".to_string(), "1".to_string())
-                    };
-                    json_write_template_yk.insert(
-                        pid,
-                        format!("{{\"token\": \"plcc_yk\",\"time\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"name\": \"{tag}\",\"type\": \"{mtype}\",\"cmd\": \"0\",\"action\": \"{action}\",\"mode\": \"{mode}\",\"timeout\": \"{timeout}\"}}]}}")
-                    );
-                    json_write_tag_yk.insert(
-                        pid,
-                        "body/_array/cmd;time".to_string()
-                    );
-                    point_yk_index = point_yk_index + 1;
+                        return Err(AdapterErr {
+                            code: ErrCode::TransportPointTagErr,
+                            msg: format!("通道解析失败，属性在数据中心未找到：{v}"),
+                        });
+                    }
                 } else {
                     return Err(AdapterErr {
                         code: ErrCode::TransportPointTagErr,

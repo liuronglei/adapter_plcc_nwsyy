@@ -13,7 +13,7 @@ use crate::{AdapterErr, ErrCode, ADAPTER_NAME};
 use crate::model::north::{MyAoe, MyAoes, MyMeasurement, MyPoints, MyTransport, MyTransports, PointParam};
 use crate::model::{points_to_south, transports_to_south, aoes_to_south,};
 use crate::utils::plccapi::{update_points, update_transports, update_aoes, do_reset};
-use crate::utils::mqttclient::{do_query_dev, do_data_query, do_register_sync};
+use crate::utils::mqttclient::{do_query_dev, do_data_query, do_register_sync, build_dev_mapping};
 use crate::db::dbutils::*;
 use crate::utils::{param_point_map, point_param_map, register_result};
 use crate::env::Env;
@@ -491,11 +491,9 @@ impl ParserManager {
                 Ok(transports) => {
                     log::info!("start do dev_guid mqtt");
                     let devs = query_dev(&transports).await?;
-                    let dev_guids = devs.iter().map(|v| {
-                        (v.devID.clone(), v.guid.clone().unwrap_or("".to_string()))
-                    }).collect::<HashMap<String, String>>();
                     log::info!("end do dev_guid mqtt");
-                    let (new_transports, current_id) = transports_to_south(transports, points_mapping, &dev_guids, point_param, point_discrete)?;
+                    let dev_mapping = build_dev_mapping(&devs);
+                    let (new_transports, current_id) = transports_to_south(transports, points_mapping, &dev_mapping, point_param, point_discrete)?;
                     let _ = update_transports(new_transports).await?;
                     self.delete_all_dev_mapping();
                     self.save_dev_mapping(&devs);
@@ -604,7 +602,8 @@ impl ParserManager {
 
     fn save_dev_mapping(&self, devs: &Vec<QueryDevResponseBody>) {
         if save_items_cbor_to_db_with_tree_name(&self.inner_db, DEV_TREE, &devs, |dev| {
-            dev.devID.as_bytes().to_vec()
+            let my_id = format!("{}.{}", dev.dev_id, dev.service_id);
+            my_id.as_bytes().to_vec()
         }) {
             info!("insert dev_mapping success");
         } else {
@@ -618,7 +617,10 @@ impl ParserManager {
     }
 
     fn delete_dev_mapping(&self, devs: &Vec<QueryDevResponseBody>) -> bool {
-        let keys = devs.iter().map(|v|v.devID.as_bytes().to_vec()).collect::<Vec<Vec<u8>>>();
+        let keys = devs.iter().map(|dev| {
+            let my_id = format!("{}.{}", dev.dev_id, dev.service_id);
+            my_id.as_bytes().to_vec()
+        }).collect::<Vec<Vec<u8>>>();
         delete_items_by_keys_with_tree_name(&self.inner_db, DEV_TREE, keys)
     }
 
@@ -733,8 +735,8 @@ async fn query_dev(transports: &MyTransports) -> Result<Vec<QueryDevResponseBody
                 msg: "通道列表不能为空".to_string(),
             });
         }
-        let dev_ids = transports.iter().map(|t|t.dev_id()).collect::<Vec<_>>();
-        do_query_dev(dev_ids).await
+        // let dev_ids = transports.iter().map(|t|t.dev_id()).collect::<Vec<_>>();
+        do_query_dev(transports).await
     } else {
         return Err(AdapterErr {
             code: ErrCode::TransportIsEmpty,
