@@ -586,8 +586,8 @@ async fn do_aoe_control(cloud_event: CloudEventRequest) -> CloudEventResponse {
                 match query_aoe_mapping().await {
                     Ok(aoe_mapping) => {
                         for status in aoes_status.iter_mut() {
-                            if let Some(north_aoe_id) = aoe_mapping.get(&status.aoe_id) {
-                                status.aoe_id = *north_aoe_id;
+                            if let Some(north_aoe_id) = aoe_mapping.iter().find_map(|(k, v)| if *v == status.aoe_id { Some(*k) } else { None }) {
+                                status.aoe_id = north_aoe_id;
                             } else {
                                 break 'result get_aoe_status_body(None, 502, "未找到北向aoe_id".to_string());
                             }
@@ -942,26 +942,42 @@ async fn test_mqtt_response() {
             devices: vec![
                 QueryDevResponseBody {
                     dev_id: "FE80-3728-DF9B-6076-3872-7525-9B31-F77F".to_string(),
-                    service_id: "service_id1".to_string(),
+                    service_id: "serviceSettings".to_string(),
                     devs: vec![
                         QueryDevResponseBodyDev { dev_guid: "guid1".to_string(), addr: "".to_string(), model: "model1".to_string(),
-                            desc: "".to_string(), port: "".to_string(), attrs: vec![{QueryDevResponseBodyMap { iot: "tgUa".to_string(), dc: "Ua".to_string() }}], not_found: vec![], reason: "".to_string() }
+                            desc: "".to_string(), port: "".to_string(), attrs: vec![{QueryDevResponseBodyMap { iot: "tgLimitPower".to_string(), dc: "LimitPower".to_string() }}], not_found: vec![], reason: "".to_string() }
                     ],
                 },
                 QueryDevResponseBody {
                     dev_id: "FE80-4D2F-E64F-B696-5206-26A0-4B37-DD6E".to_string(),
-                    service_id: "service_id1".to_string(),
+                    service_id: "serviceYC2".to_string(),
                     devs: vec![
                         QueryDevResponseBodyDev { dev_guid: "guid2".to_string(), addr: "".to_string(), model: "model2".to_string(),
-                            desc: "".to_string(), port: "".to_string(), attrs: vec![{QueryDevResponseBodyMap { iot: "tgUb".to_string(), dc: "Ub".to_string() }}], not_found: vec![], reason: "".to_string() }
+                            desc: "".to_string(), port: "".to_string(), attrs: vec![{QueryDevResponseBodyMap { iot: "tgP".to_string(), dc: "P".to_string() }}], not_found: vec![], reason: "".to_string() }
+                    ],
+                },
+                QueryDevResponseBody {
+                    dev_id: "FE80-4D2F-E64F-B696-5206-26A0-4B37-DD6E".to_string(),
+                    service_id: "serviceYK".to_string(),
+                    devs: vec![
+                        QueryDevResponseBodyDev { dev_guid: "guid2".to_string(), addr: "".to_string(), model: "model2".to_string(),
+                            desc: "".to_string(), port: "".to_string(), attrs: vec![{QueryDevResponseBodyMap { iot: "tgYKChannel1".to_string(), dc: "YKChannel1".to_string() }}], not_found: vec![], reason: "".to_string() }
                     ],
                 },
                 QueryDevResponseBody {
                     dev_id: "FE80-90D1-B2E2-5A07-B94D-FDA2-80E0-939A".to_string(),
-                    service_id: "service_id1".to_string(),
+                    service_id: "serviceSettings".to_string(),
                     devs: vec![
                         QueryDevResponseBodyDev { dev_guid: "guid3".to_string(), addr: "".to_string(), model: "model1".to_string(),
-                            desc: "".to_string(), port: "".to_string(), attrs: vec![{QueryDevResponseBodyMap { iot: "tgUc".to_string(), dc: "Uc".to_string() }}], not_found: vec![], reason: "".to_string() }
+                            desc: "".to_string(), port: "".to_string(), attrs: vec![{QueryDevResponseBodyMap { iot: "tgPlimit".to_string(), dc: "Plimit".to_string() }}], not_found: vec![], reason: "".to_string() }
+                    ],
+                },
+                QueryDevResponseBody {
+                    dev_id: "FE80-90D1-B2E2-5A07-B94D-FDA2-80E0-939A".to_string(),
+                    service_id: "servicePVInput".to_string(),
+                    devs: vec![
+                        QueryDevResponseBodyDev { dev_guid: "guid3".to_string(), addr: "".to_string(), model: "model1".to_string(),
+                            desc: "".to_string(), port: "".to_string(), attrs: vec![{QueryDevResponseBodyMap { iot: "tgInP".to_string(), dc: "InP".to_string() }}], not_found: vec![], reason: "".to_string() }
                     ],
                 },
             ],

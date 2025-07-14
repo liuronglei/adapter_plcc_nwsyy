@@ -10,7 +10,7 @@ use sha2::Sha256;
 use tokio::time::{interval, Duration};
 use crate::model::aoe_action_result_to_north;
 use crate::model::datacenter::CloudEventAoeStatus;
-use crate::model::south::{AoeModel, Measurement, PbAoeResults, Transport, AoeControl};
+use crate::model::south::{AoeModel, Measurement, PbAoeResults, Transport, AoeControl, AoeAction};
 use crate::model::north::{MyPbAoeResult, MyPbActionResult};
 use crate::utils::mqttclient::{client_publish, generate_aoe_update, generate_aoe_set, query_register_dev};
 use crate::utils::point_param_map;
@@ -56,7 +56,21 @@ pub async fn update_aoes(aoes: Vec<AoeModel>) -> Result<(), AdapterErr> {
 
 pub async fn do_reset() -> Result<(), AdapterErr> {
     let token = login().await?;
-    reset(token).await
+    // 记录重置前的AOE状态
+    let aoes_status = do_query_aoe_status().await?;
+    reset(token.clone()).await?;
+    // 重置后恢复AOE状态
+    let my_aoe_action = aoes_status.iter().map(|status| {
+        match status.aoe_status {
+            0 => {
+                AoeAction::StopAoe(status.aoe_id)
+            },
+            _ => {
+                AoeAction::StartAoe(status.aoe_id)
+            }
+        }
+    }).collect::<Vec<AoeAction>>();
+    aoe_action(token, AoeControl { AoeActions: my_aoe_action }).await
 }
 
 async fn delete_points(token: String, ids: Vec<u64>) -> Result<(), AdapterErr> {

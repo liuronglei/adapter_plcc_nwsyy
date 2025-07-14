@@ -521,6 +521,7 @@ impl ParserManager {
                 Ok(aoes) => {
                     let (new_aoes, aoes_mapping) = aoes_to_south(aoes, &points_mapping, current_id)?;
                     let _ = update_aoes(new_aoes).await?;
+                    let _ = self.delete_all_aoe_mapping();
                     self.save_aoe_mapping(&aoes_mapping);
                     Ok(())
                 },
@@ -594,6 +595,18 @@ impl ParserManager {
         } else {
             warn!("!!Failed to insert aoe_mapping");
         }
+    }
+
+    fn delete_all_aoe_mapping(&self) -> bool {
+        let aoes = self.query_aoe_mapping();
+        self.delete_aoe_mapping(&aoes)
+    }
+
+    fn delete_aoe_mapping(&self, aoes: &HashMap<u64, u64>) -> bool {
+        let keys = aoes.keys().map(|k| {
+            k.to_string().as_bytes().to_vec()
+        }).collect::<Vec<Vec<u8>>>();
+        delete_items_by_keys_with_tree_name(&self.inner_db, AOE_TREE, keys)
     }
 
     fn query_dev_mapping(&self) -> Vec<QueryDevResponseBody> {
