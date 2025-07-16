@@ -164,9 +164,11 @@ impl ParserManager {
                                 points
                             },
                             Err(err) => {
+                                let msg = format!("测点JSON反序列化失败：{err}");
+                                log::error!("{}", msg);
                                 return Err(AdapterErr {
                                     code: ErrCode::PointJsonDeserializeErr,
-                                    msg: format!("测点JSON反序列化失败：{err}"),
+                                    msg,
                                 });
                             }
                         }
@@ -213,15 +215,21 @@ impl ParserManager {
                     points_file.write_all(serde_json::to_string(&old_points).unwrap().as_bytes()).unwrap();
                     Ok(())
                 },
-                Err(err) => Err(AdapterErr {
-                    code: ErrCode::PointJsonDeserializeErr,
-                    msg: format!("测点JSON反序列化失败：{err}"),
-                })
+                Err(err) => {
+                    let msg = format!("测点JSON反序列化失败：{err}");
+                    log::error!("{}", msg);
+                    Err(AdapterErr {
+                        code: ErrCode::PointJsonDeserializeErr,
+                        msg,
+                    })
+                }
             }
         } else {
+            let msg = "测点JSON文件不存在".to_string();
+            log::error!("{}", msg);
             Err(AdapterErr {
                 code: ErrCode::PointJsonNotFound,
-                msg: "测点JSON文件不存在".to_string(),
+                msg,
             })
         }
     }
@@ -241,9 +249,11 @@ impl ParserManager {
                                 transports
                             },
                             Err(err) => {
+                                let msg = format!("通道JSON反序列化失败：{err}");
+                                log::error!("{}", msg);
                                 return Err(AdapterErr {
                                     code: ErrCode::TransportJsonDeserializeErr,
-                                    msg: format!("通道JSON反序列化失败：{err}"),
+                                    msg,
                                 });
                             }
                         }
@@ -290,15 +300,21 @@ impl ParserManager {
                     transports_file.write_all(serde_json::to_string(&old_transports).unwrap().as_bytes()).unwrap();
                     Ok(())
                 },
-                Err(err) => Err(AdapterErr {
-                    code: ErrCode::TransportJsonDeserializeErr,
-                    msg: format!("通道JSON反序列化失败：{err}"),
-                })
+                Err(err) => {
+                    let msg = format!("通道JSON反序列化失败：{err}");
+                    log::error!("{}", msg);
+                    Err(AdapterErr {
+                        code: ErrCode::TransportJsonDeserializeErr,
+                        msg,
+                    })
+                }
             }
         } else {
+            let msg = "通道JSON文件不存在".to_string();
+            log::error!("{}", msg);
             Err(AdapterErr {
                 code: ErrCode::TransportJsonNotFound,
-                msg: "通道JSON文件不存在".to_string(),
+                msg,
             })
         }
     }
@@ -318,9 +334,11 @@ impl ParserManager {
                                 aoes
                             },
                             Err(err) => {
+                                let msg = format!("策略JSON反序列化失败：{err}");
+                                log::error!("{}", msg);
                                 return Err(AdapterErr {
                                     code: ErrCode::AoeJsonDeserializeErr,
-                                    msg: format!("策略JSON反序列化失败：{err}"),
+                                    msg,
                                 });
                             }
                         }
@@ -367,15 +385,21 @@ impl ParserManager {
                     aoes_file.write_all(serde_json::to_string(&old_aoes).unwrap().as_bytes()).unwrap();
                     Ok(())
                 },
-                Err(err) => Err(AdapterErr {
-                    code: ErrCode::AoeJsonDeserializeErr,
-                    msg: format!("策略JSON反序列化失败：{err}"),
-                })
+                Err(err) => {
+                    let msg = format!("策略JSON反序列化失败：{err}");
+                    log::error!("{}", msg);
+                    Err(AdapterErr {
+                        code: ErrCode::AoeJsonDeserializeErr,
+                        msg,
+                    })
+                }
             }
         } else {
+            let msg = "策略JSON文件不存在".to_string();
+            log::error!("{}", msg);
             Err(AdapterErr {
                 code: ErrCode::AoeJsonNotFound,
-                msg: "策略JSON文件不存在".to_string(),
+                msg,
             })
         }
     }
