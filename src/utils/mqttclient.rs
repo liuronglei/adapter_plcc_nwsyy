@@ -73,7 +73,7 @@ pub async fn do_query_dev(transports: &Vec<MyTransport>) -> Result<Vec<QueryDevR
                                 let mut result = vec![];
                                 for data in msg.devices.clone() {
                                     for dev in &data.devs {
-                                        if data.service_id.as_str() == "serviceNotExist" || !dev.not_found.is_empty() {
+                                        if data.service_id.as_str() == "serviceNotExist" || dev.not_found.clone().is_some_and(|x|!x.is_empty()) {
                                             has_error = true;
                                             break;
                                         }
@@ -82,8 +82,8 @@ pub async fn do_query_dev(transports: &Vec<MyTransport>) -> Result<Vec<QueryDevR
                                 }
                                 if has_error {
                                     tx.send(Err(AdapterErr {
-                                        code: ErrCode::QueryDevStatusErr,
-                                        msg: format!("查询设备信息报错，有部分属性在数据中心未找到： {:?}", msg),
+                                        code: ErrCode::QueryDevAttrNotFound,
+                                        msg: format!("查询设备信息报错，有部分属性在数据中心未找到：{:?}", msg),
                                     }))
                                 } else {
                                     tx.send(Ok(result))
@@ -116,11 +116,11 @@ pub async fn do_query_dev(transports: &Vec<MyTransport>) -> Result<Vec<QueryDevR
         Ok(Ok(result)) => result,
         Ok(Err(_)) => Err(AdapterErr {
             code: ErrCode::QueryDevTimeout,
-            msg: "查询设备GUID，等待响应失败".to_string(),
+            msg: "查询南向设备信息，等待响应失败".to_string(),
         }),
         Err(_) => Err(AdapterErr {
             code: ErrCode::QueryDevTimeout,
-            msg: "查询设备GUID超时，未收到MQTT响应".to_string(),
+            msg: "查询南向设备信息超时，未收到MQTT响应".to_string(),
         }),
     }
 }
@@ -858,40 +858,125 @@ fn generate_time(ts_millis: Option<u64>) -> String {
 }
 
 fn build_query_dev_bodys(transports: &Vec<MyTransport>) -> Vec<QueryDevBody> {
-    let mut map: HashMap<(String, String), Vec<String>> = HashMap::new();
+    let mut result = vec![];
+    let mut ycyx_map: HashMap<(String, String), Vec<String>> = HashMap::new();
+    let mut yt_map: HashMap<(String, String), Vec<String>> = HashMap::new();
+    let mut yk_map: HashMap<(String, String), Vec<String>> = HashMap::new();
     for transport in transports {
-        let all_points = transport
-            .point_ycyx_ids()
-            .into_iter()
-            .chain(transport.point_yt_ids())
-            .chain(transport.point_yk_ids());
-        for point in all_points {
+        for point in transport.point_ycyx_ids() {
             if let Some((dev_id, service_id, attr)) = get_point_attr(&point) {
-                map.entry((dev_id, service_id)).or_default().push(attr);
+                ycyx_map.entry((dev_id, service_id)).or_default().push(attr);
+            }
+        }
+        for point in transport.point_yt_ids() {
+            if let Some((dev_id, service_id, attr)) = get_point_attr(&point) {
+                yt_map.entry((dev_id, service_id)).or_default().push(attr);
+            }
+        }
+        for point in transport.point_yk_ids() {
+            if let Some((dev_id, service_id, attr)) = get_point_attr(&point) {
+                yk_map.entry((dev_id, service_id)).or_default().push(attr);
             }
         }
     }
-    map.into_iter()
+    result.extend(ycyx_map.into_iter()
         .map(|((dev_id, service_id), mut attrs)| {
             attrs.sort();
             attrs.dedup();
             QueryDevBody {
                 dev_id,
                 service_id,
-                attrs,
+                attrs: Some(attrs),
+                setting_cmds: None,
+                yk_cmds: None,
             }
-        }).collect()
+        }).collect::<Vec<QueryDevBody>>());
+    result.extend(yt_map.into_iter()
+        .map(|((dev_id, service_id), mut attrs)| {
+            attrs.sort();
+            attrs.dedup();
+            let mut attr_map: HashMap<String, Vec<String>> = HashMap::new();
+            for attr in attrs {
+                let mut parts = attr.splitn(2, ':');
+                let (name, param) = match (parts.next(), parts.next()) {
+                    (Some(k), Some(v)) => (k.to_string(), v.to_string()),
+                    _ => {
+                        ("".to_string(), "".to_string())
+                    }
+                };
+                attr_map.entry(name).or_default().push(param);
+            }
+            let setting_cmds = attr_map.into_iter()
+                .map(|(name, mut params)| {
+                    params.sort();
+                    params.dedup();
+                    QueryDevBodyCmdMap {
+                        name,
+                        params,
+                    }
+            }).collect::<Vec<QueryDevBodyCmdMap>>();
+            QueryDevBody {
+                dev_id,
+                service_id,
+                attrs: None,
+                setting_cmds: Some(setting_cmds),
+                yk_cmds: None,
+            }
+        }).collect::<Vec<QueryDevBody>>());
+    result.extend(yk_map.into_iter()
+        .map(|((dev_id, service_id), mut attrs)| {
+            attrs.sort();
+            attrs.dedup();
+            let yk_cmds = attrs.iter().map(|attr|{
+                let mut parts = attr.splitn(2, ':');
+                let (name, _) = match (parts.next(), parts.next()) {
+                    (Some(k), Some(v)) => (k.to_string(), v.to_string()),
+                    _ => {
+                        ("".to_string(), "".to_string())
+                    }
+                };
+                name
+            }).collect::<Vec<String>>();
+            QueryDevBody {
+                dev_id,
+                service_id,
+                attrs: None,
+                setting_cmds: None,
+                yk_cmds: Some(yk_cmds),
+            }
+        }).collect::<Vec<QueryDevBody>>());
+    result
 }
 
 pub fn build_dev_mapping(devs: &Vec<QueryDevResponseBody>) -> HashMap<(String, String, String), (String, String, String)> {
     let mut result = HashMap::new();
     for data in devs {
         for dev in &data.devs {
-            for attr in &dev.attrs {
-                result.insert(
-                    (data.dev_id.clone(), data.service_id.clone(), attr.iot.clone()),
-                    (dev.dev_guid.clone(), dev.model.clone(), attr.dc.clone())
-                );
+            if let Some(attrs) = &dev.attrs {
+                for attr in attrs {
+                    result.insert(
+                        (data.dev_id.clone(), data.service_id.clone(), attr.iot.clone()),
+                        (dev.dev_guid.clone(), dev.model.clone(), attr.dc.clone())
+                    );
+                }
+            }
+            if let Some(setting_cmds) = &dev.setting_cmds {
+                for setting_cmd in setting_cmds {
+                    for param in &setting_cmd.params {
+                        result.insert(
+                            (data.dev_id.clone(), data.service_id.clone(), format!("{}:{}", setting_cmd.name.clone(), param.iot.clone())),
+                            (dev.dev_guid.clone(), dev.model.clone(), param.dc.clone())
+                        );
+                    }
+                }
+            }
+            if let Some(yk_cmds) = &dev.yk_cmds {
+                for yk_cmd in yk_cmds {
+                    result.insert(
+                        (data.dev_id.clone(), data.service_id.clone(), format!("{}:cmd", yk_cmd.iot.clone())),
+                        (dev.dev_guid.clone(), dev.model.clone(), yk_cmd.dc.clone())
+                    );
+                }
             }
         }
     }
@@ -945,40 +1030,45 @@ async fn test_mqtt_response() {
                     dev_id: "FE80-3728-DF9B-6076-3872-7525-9B31-F77F".to_string(),
                     service_id: "serviceSettings".to_string(),
                     devs: vec![
-                        QueryDevResponseBodyDev { dev_guid: "guid1".to_string(), addr: "".to_string(), model: "model1".to_string(),
-                            desc: "".to_string(), port: "".to_string(), attrs: vec![{QueryDevResponseBodyMap { iot: "tgLimitPower".to_string(), dc: "LimitPower".to_string() }}], not_found: vec![], reason: "".to_string() }
+                        QueryDevResponseBodyDev { dev_guid: "guid1".to_string(), addr: "".to_string(), model: "model1".to_string(), desc: "".to_string(), port: "".to_string(), 
+                            attrs: Some(vec![{QueryDevResponseBodyMap { iot: "tgLimitPower".to_string(), dc: "LimitPower".to_string() }}]), not_found: Some(vec![]), reason: Some("".to_string()),
+                            setting_cmds: None, yk_cmds: None }
                     ],
                 },
                 QueryDevResponseBody {
                     dev_id: "FE80-4D2F-E64F-B696-5206-26A0-4B37-DD6E".to_string(),
                     service_id: "serviceYC2".to_string(),
                     devs: vec![
-                        QueryDevResponseBodyDev { dev_guid: "guid2".to_string(), addr: "".to_string(), model: "model2".to_string(),
-                            desc: "".to_string(), port: "".to_string(), attrs: vec![{QueryDevResponseBodyMap { iot: "tgP".to_string(), dc: "P".to_string() }}], not_found: vec![], reason: "".to_string() }
+                        QueryDevResponseBodyDev { dev_guid: "guid2".to_string(), addr: "".to_string(), model: "model2".to_string(), desc: "".to_string(), port: "".to_string(),
+                            attrs: Some(vec![{QueryDevResponseBodyMap { iot: "tgP".to_string(), dc: "P".to_string() }}]), not_found: Some(vec![]), reason: Some("".to_string()),
+                            setting_cmds: None, yk_cmds: None }
                     ],
                 },
                 QueryDevResponseBody {
                     dev_id: "FE80-4D2F-E64F-B696-5206-26A0-4B37-DD6E".to_string(),
                     service_id: "serviceYK".to_string(),
                     devs: vec![
-                        QueryDevResponseBodyDev { dev_guid: "guid2".to_string(), addr: "".to_string(), model: "model2".to_string(),
-                            desc: "".to_string(), port: "".to_string(), attrs: vec![{QueryDevResponseBodyMap { iot: "tgYKChannel1".to_string(), dc: "YKChannel1".to_string() }}], not_found: vec![], reason: "".to_string() }
+                        QueryDevResponseBodyDev { dev_guid: "guid2".to_string(), addr: "".to_string(), model: "model2".to_string(), desc: "".to_string(), port: "".to_string(),
+                            attrs: Some(vec![{QueryDevResponseBodyMap { iot: "tgYKChannel1".to_string(), dc: "YKChannel1".to_string() }}]), not_found: Some(vec![]), reason: Some("".to_string()),
+                            setting_cmds: None, yk_cmds: None }
                     ],
                 },
                 QueryDevResponseBody {
                     dev_id: "FE80-90D1-B2E2-5A07-B94D-FDA2-80E0-939A".to_string(),
                     service_id: "serviceSettings".to_string(),
                     devs: vec![
-                        QueryDevResponseBodyDev { dev_guid: "guid3".to_string(), addr: "".to_string(), model: "model1".to_string(),
-                            desc: "".to_string(), port: "".to_string(), attrs: vec![{QueryDevResponseBodyMap { iot: "tgPlimit".to_string(), dc: "Plimit".to_string() }}], not_found: vec![], reason: "".to_string() }
+                        QueryDevResponseBodyDev { dev_guid: "guid3".to_string(), addr: "".to_string(), model: "model1".to_string(), desc: "".to_string(), port: "".to_string(),
+                            attrs: Some(vec![{QueryDevResponseBodyMap { iot: "tgPlimit".to_string(), dc: "Plimit".to_string() }}]), not_found: Some(vec![]), reason: Some("".to_string()),
+                            setting_cmds: None, yk_cmds: None }
                     ],
                 },
                 QueryDevResponseBody {
                     dev_id: "FE80-90D1-B2E2-5A07-B94D-FDA2-80E0-939A".to_string(),
                     service_id: "servicePVInput".to_string(),
                     devs: vec![
-                        QueryDevResponseBodyDev { dev_guid: "guid3".to_string(), addr: "".to_string(), model: "model1".to_string(),
-                            desc: "".to_string(), port: "".to_string(), attrs: vec![{QueryDevResponseBodyMap { iot: "tgInP".to_string(), dc: "InP".to_string() }}], not_found: vec![], reason: "".to_string() }
+                        QueryDevResponseBodyDev { dev_guid: "guid3".to_string(), addr: "".to_string(), model: "model1".to_string(), desc: "".to_string(), port: "".to_string(),
+                            attrs: Some(vec![{QueryDevResponseBodyMap { iot: "tgInP".to_string(), dc: "InP".to_string() }}]), not_found: Some(vec![]), reason: Some("".to_string()),
+                            setting_cmds: None, yk_cmds: None }
                     ],
                 },
             ],

@@ -81,7 +81,18 @@ pub struct QueryDevBody {
     pub dev_id: String,
     #[serde(rename = "serviceId")]
     pub service_id: String,
-    pub attrs: Vec<String>,
+    pub attrs: Option<Vec<String>>,
+    #[serde(rename = "settingCmds")]
+    pub setting_cmds: Option<Vec<QueryDevBodyCmdMap>>,
+    #[serde(rename = "ykCmds")]
+    pub yk_cmds: Option<Vec<String>>,
+}
+
+#[allow(non_snake_case)]
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct QueryDevBodyCmdMap {
+    pub name: String,
+    pub params: Vec<String>,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
@@ -108,10 +119,20 @@ pub struct QueryDevResponseBodyDev {
     pub model: String,
     pub desc: String,
     pub port: String,
-    pub attrs: Vec<QueryDevResponseBodyMap>,
+    pub attrs: Option<Vec<QueryDevResponseBodyMap>>,
+    #[serde(rename = "settingCmds")]
+    pub setting_cmds: Option<Vec<QueryDevResponseBodySettingCmd>>,
+    #[serde(rename = "ykCmds")]
+    pub yk_cmds: Option<Vec<QueryDevResponseBodyMap>>,
     #[serde(rename = "notFound")]
-    pub not_found: Vec<String>,
-    pub reason: String,
+    pub not_found: Option<Vec<String>>,
+    pub reason: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct QueryDevResponseBodySettingCmd {
+    pub name: String,
+    pub params: Vec<QueryDevResponseBodyMap>,
 }
 
 #[allow(non_snake_case)]
