@@ -230,7 +230,7 @@ pub fn transports_to_south(transports: MyTransports, points_mapping: &HashMap<St
                     let pid = *points_mapping.get(v).unwrap();
                     let (action, timeout, mtype, mode) = if let Some(param) = point_param.get(v) {
                         (param.action.clone().unwrap_or("1".to_string()),
-                        param.timeout.clone().unwrap_or("30".to_string()),
+                        param.timeout.clone().unwrap_or("60".to_string()),
                         param.mtype.clone().unwrap_or("SCO".to_string()),
                         param.mode.clone().unwrap_or("1".to_string()))
                     } else {
