@@ -199,11 +199,11 @@ pub fn transports_to_south(
                         let datatype = if is_discrete {"int"} else {"float"};
                         json_write_template_yt.insert(
                             pid,
-                            format!("{{\"token\": \"plcc_yt\",\"timestamp\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"timeout\": \"60\",\"body\": [{{\"name\": \"{dc_attr}\",\"val\": \"\",\"unit\": \"\",\"datatype\": \"{datatype}\"}}]}}]}}")
+                            format!("{{\"token\": \"%Y%m%d%H%M%S\",\"timestamp\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"timeout\": \"60\",\"body\": [{{\"name\": \"{dc_attr}\",\"val\": \"\",\"unit\": \"\",\"datatype\": \"{datatype}\"}}]}}]}}")
                         );
                         json_write_tag_yt.insert(
                             pid,
-                            "body/_array/body/_array/val;timestamp".to_string()
+                            "body/_array/body/_array/val;timestamp;token".to_string()
                         );
                         point_yt_index = point_yt_index + 1;
                     } else {
@@ -249,11 +249,11 @@ pub fn transports_to_south(
                         };
                         json_write_template_yk.insert(
                             pid,
-                            format!("{{\"token\": \"plcc_yk\",\"time\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"name\": \"{dc_attr}\",\"type\": \"{mtype}\",\"cmd\": \"0\",\"action\": \"{action}\",\"mode\": \"{mode}\",\"timeout\": \"{timeout}\"}}]}}")
+                            format!("{{\"token\": \"%Y%m%d%H%M%S\",\"time\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"name\": \"{dc_attr}\",\"type\": \"{mtype}\",\"cmd\": \"0\",\"action\": \"{action}\",\"mode\": \"{mode}\",\"timeout\": \"{timeout}\"}}]}}")
                         );
                         json_write_tag_yk.insert(
                             pid,
-                            "body/_array/cmd;time".to_string()
+                            "body/_array/cmd;time;token".to_string()
                         );
                         point_yk_index = point_yk_index + 1;
                     } else {

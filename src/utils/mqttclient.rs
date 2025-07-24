@@ -1022,6 +1022,7 @@ async fn test_mqtt_response() {
         let _ = client_publish(&client, &tp, &body).await;
 
         let tp = format!("/{app_name}/sys.iot/S-otaservice/F-GetDCAttr");
+        
         let body = serde_json::to_string(&QueryDevResponse {
             token: "".to_string(),
             time: "".to_string(),
@@ -1031,8 +1032,11 @@ async fn test_mqtt_response() {
                     service_id: "serviceSettings".to_string(),
                     devs: vec![
                         QueryDevResponseBodyDev { dev_guid: "guid1".to_string(), addr: "".to_string(), model: "model1".to_string(), desc: "".to_string(), port: "".to_string(), 
-                            attrs: Some(vec![{QueryDevResponseBodyMap { iot: "tgLimitPower".to_string(), dc: "LimitPower".to_string() }}]), not_found: Some(vec![]), reason: Some("".to_string()),
-                            setting_cmds: None, yk_cmds: None }
+                            setting_cmds: Some(vec![
+                                QueryDevResponseBodySettingCmd{ name: "tgLimitPower".to_string(), params: vec![QueryDevResponseBodyMap { iot: "tgGun1Power".to_string(), dc: "Gun1Power".to_string() }] }
+                            ]),
+                            not_found: Some(vec![]), reason: Some("".to_string()),
+                            attrs: None, yk_cmds: None }
                     ],
                 },
                 QueryDevResponseBody {
@@ -1040,7 +1044,7 @@ async fn test_mqtt_response() {
                     service_id: "serviceYC2".to_string(),
                     devs: vec![
                         QueryDevResponseBodyDev { dev_guid: "guid2".to_string(), addr: "".to_string(), model: "model2".to_string(), desc: "".to_string(), port: "".to_string(),
-                            attrs: Some(vec![{QueryDevResponseBodyMap { iot: "tgP".to_string(), dc: "P".to_string() }}]), not_found: Some(vec![]), reason: Some("".to_string()),
+                            attrs: Some(vec![QueryDevResponseBodyMap { iot: "tgP".to_string(), dc: "P".to_string() }]), not_found: Some(vec![]), reason: Some("".to_string()),
                             setting_cmds: None, yk_cmds: None }
                     ],
                 },
@@ -1049,8 +1053,8 @@ async fn test_mqtt_response() {
                     service_id: "serviceYK".to_string(),
                     devs: vec![
                         QueryDevResponseBodyDev { dev_guid: "guid2".to_string(), addr: "".to_string(), model: "model2".to_string(), desc: "".to_string(), port: "".to_string(),
-                            attrs: Some(vec![{QueryDevResponseBodyMap { iot: "tgYKChannel1".to_string(), dc: "YKChannel1".to_string() }}]), not_found: Some(vec![]), reason: Some("".to_string()),
-                            setting_cmds: None, yk_cmds: None }
+                            yk_cmds: Some(vec![QueryDevResponseBodyMap { iot: "tgYKChannel1".to_string(), dc: "YKChannel1".to_string() }]), not_found: Some(vec![]), reason: Some("".to_string()),
+                            setting_cmds: None, attrs: None }
                     ],
                 },
                 QueryDevResponseBody {
@@ -1058,7 +1062,7 @@ async fn test_mqtt_response() {
                     service_id: "serviceSettings".to_string(),
                     devs: vec![
                         QueryDevResponseBodyDev { dev_guid: "guid3".to_string(), addr: "".to_string(), model: "model1".to_string(), desc: "".to_string(), port: "".to_string(),
-                            attrs: Some(vec![{QueryDevResponseBodyMap { iot: "tgPlimit".to_string(), dc: "Plimit".to_string() }}]), not_found: Some(vec![]), reason: Some("".to_string()),
+                            attrs: Some(vec![QueryDevResponseBodyMap { iot: "tgPlimit".to_string(), dc: "Plimit".to_string() }]), not_found: Some(vec![]), reason: Some("".to_string()),
                             setting_cmds: None, yk_cmds: None }
                     ],
                 },
@@ -1067,7 +1071,7 @@ async fn test_mqtt_response() {
                     service_id: "servicePVInput".to_string(),
                     devs: vec![
                         QueryDevResponseBodyDev { dev_guid: "guid3".to_string(), addr: "".to_string(), model: "model1".to_string(), desc: "".to_string(), port: "".to_string(),
-                            attrs: Some(vec![{QueryDevResponseBodyMap { iot: "tgInP".to_string(), dc: "InP".to_string() }}]), not_found: Some(vec![]), reason: Some("".to_string()),
+                            attrs: Some(vec![QueryDevResponseBodyMap { iot: "tgInP".to_string(), dc: "InP".to_string() }]), not_found: Some(vec![]), reason: Some("".to_string()),
                             setting_cmds: None, yk_cmds: None }
                     ],
                 },
