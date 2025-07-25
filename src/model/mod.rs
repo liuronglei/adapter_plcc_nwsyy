@@ -243,9 +243,9 @@ pub fn transports_to_south(
                             (param.action.clone().unwrap_or("1".to_string()),
                             param.timeout.clone().unwrap_or("60".to_string()),
                             param.mtype.clone().unwrap_or("SCO".to_string()),
-                            param.mode.clone().unwrap_or("1".to_string()))
+                            param.mode.clone().unwrap_or("0".to_string()))
                         } else {
-                            ("1".to_string(), "30".to_string(), "SCO".to_string(), "1".to_string())
+                            ("1".to_string(), "60".to_string(), "SCO".to_string(), "0".to_string())
                         };
                         json_write_template_yk.insert(
                             pid,
