@@ -12,7 +12,7 @@ use crate::model::aoe_action_result_to_north;
 use crate::model::datacenter::CloudEventAoeStatus;
 use crate::model::south::{AoeModel, Measurement, PbAoeResults, Transport, AoeControl, AoeAction};
 use crate::model::north::{MyPbAoeResult, MyPbActionResult};
-use crate::utils::mqttclient::{client_publish, generate_aoe_update, generate_aoe_set, query_register_dev};
+use crate::utils::mqttclient::{get_mqttoptions, client_publish, generate_aoe_update, generate_aoe_set, query_register_dev};
 use crate::utils::point_param_map;
 use crate::utils::localapi::query_aoe_mapping;
 use crate::{AdapterErr, ErrCode, ADAPTER_NAME, URL_AOES, URL_AOE_RESULTS, URL_LOGIN, URL_POINTS, URL_RESET,
@@ -427,9 +427,7 @@ async fn aoe_upload_loop() -> Result<(), AdapterErr> {
     let mut token = "".to_string();
     let mut last_time: HashMap<u64, u64> = HashMap::new();
 
-    let mut mqttoptions = MqttOptions::new("plcc_aoe_result", &mqtt_server, mqtt_server_port);
-    mqttoptions.set_keep_alive(Duration::from_secs(5));
-    // mqttoptions.set_credentials("username", "password");
+    let mqttoptions = get_mqttoptions("plcc_aoe_result", &mqtt_server, mqtt_server_port);
     let topic_request_update = format!("/sys.brd/{app_name}/S-dataservice/F-UpdateSOE");
     let topic_request_set = format!("/sys.dbc/{app_name}/S-dataservice/F-SetSOE");
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 100);

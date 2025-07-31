@@ -15,6 +15,13 @@ use crate::utils::{register_result, get_point_attr};
 use crate::utils::localapi::{query_dev_mapping, query_aoe_mapping};
 use crate::utils::plccapi::{do_query_aoe_status, do_aoe_action};
 
+pub fn get_mqttoptions(user_name: &str, mqtt_server: &str, mqtt_server_port: u16) -> MqttOptions {
+    let mut mqttoptions = MqttOptions::new(user_name, mqtt_server, mqtt_server_port);
+    mqttoptions.set_max_packet_size(1024 * 1024 * 100, 1024 * 1024 * 100);
+    mqttoptions.set_keep_alive(Duration::from_secs(5));
+    mqttoptions
+}
+
 pub async fn client_subscribe(client: &AsyncClient, topic: &str) -> Result<(), AdapterErr> {
     match client.subscribe(topic, QoS::AtMostOnce).await {
         Ok(_) => Ok(()),
@@ -45,10 +52,7 @@ pub async fn do_query_dev(transports: &Vec<MyTransport>) -> Result<Vec<QueryDevR
     let mqtt_server_port = env.get_mqtt_server_port();
     let mqtt_timeout = env.get_mqtt_timeout();
     let app_name = env.get_app_name();
-    let mut mqttoptions = MqttOptions::new("plcc_query_dev", &mqtt_server, mqtt_server_port);
-    mqttoptions.set_keep_alive(Duration::from_secs(5));
-    // mqttoptions.set_credentials("username", "password");
-    
+    let mqttoptions = get_mqttoptions("plcc_query_dev", &mqtt_server, mqtt_server_port);
     let topic_request_query_dev = format!("/sys.iot/{app_name}/S-otaservice/F-GetDCAttr");
     let topic_response_query_dev = format!("/{app_name}/sys.iot/S-otaservice/F-GetDCAttr");
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
@@ -155,9 +159,7 @@ async fn do_register_model() -> Result<(), AdapterErr> {
     let mqtt_timeout = env.get_mqtt_timeout();
     let app_name = env.get_app_name();
     let app_model = env.get_app_model();
-    let mut mqttoptions = MqttOptions::new("plcc_model_register", &mqtt_server, mqtt_server_port);
-    mqttoptions.set_keep_alive(Duration::from_secs(5));
-    // mqttoptions.set_credentials("username", "password");
+    let mqttoptions = get_mqttoptions("plcc_model_register", &mqtt_server, mqtt_server_port);
     let topic_request_register = format!("/sys.dbc/{app_name}/S-dataservice/F-SetModel");
     let topic_response_register = format!("/{app_name}/sys.dbc/S-dataservice/F-SetModel");
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
@@ -235,9 +237,7 @@ async fn do_register_app() -> Result<(), AdapterErr> {
     let mqtt_timeout = env.get_mqtt_timeout();
     let app_name = env.get_app_name();
     let app_model = env.get_app_model();
-    let mut mqttoptions = MqttOptions::new("plcc_app_register", &mqtt_server, mqtt_server_port);
-    mqttoptions.set_keep_alive(Duration::from_secs(5));
-    // mqttoptions.set_credentials("username", "password");
+    let mqttoptions = get_mqttoptions("plcc_app_register", &mqtt_server, mqtt_server_port);
     let topic_request_register = format!("/sys.dbc/{app_name}/S-dataservice/F-Register");
     let topic_response_register = format!("/{app_name}/sys.dbc/S-dataservice/F-Register");
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
@@ -324,9 +324,7 @@ pub async fn data_query() -> Result<(), AdapterErr> {
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
     let app_name = env.get_app_name();
-    let mut mqttoptions = MqttOptions::new("plcc_data_query", &mqtt_server, mqtt_server_port);
-    mqttoptions.set_keep_alive(Duration::from_secs(5));
-    // mqttoptions.set_credentials("username", "password");
+    let mqttoptions = get_mqttoptions("plcc_data_query", &mqtt_server, mqtt_server_port);
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
     let topic_request_query = format!("/sys.dbc/{app_name}/S-dataservice/F-GetRealData");
     let topic_response_query = format!("/{app_name}/sys.dbc/S-dataservice/F-GetRealData");
@@ -369,9 +367,7 @@ pub async fn keep_alive() -> Result<(), AdapterErr> {
     let app_name = env.get_app_name();
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
-    let mut mqttoptions = MqttOptions::new("plcc_keep_alive", &mqtt_server, mqtt_server_port);
-    mqttoptions.set_keep_alive(Duration::from_secs(5));
-    // mqttoptions.set_credentials("username", "password");
+    let mqttoptions = get_mqttoptions("plcc_keep_alive", &mqtt_server, mqtt_server_port);
     let topic_request = format!("/sys.appman/{app_name}/S-appmanager/F-KeepAlive");
     let topic_response = format!("/{app_name}/sys.appman/S-appmanager/F-KeepAlive");
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
@@ -404,9 +400,7 @@ pub async fn query_register_dev() -> Result<String, AdapterErr> {
     let mqtt_server_port = env.get_mqtt_server_port();
     let mqtt_timeout = env.get_mqtt_timeout();
     let app_name = env.get_app_name();
-    let mut mqttoptions = MqttOptions::new("plcc_register_dev", &mqtt_server, mqtt_server_port);
-    mqttoptions.set_keep_alive(Duration::from_secs(5));
-    // mqttoptions.set_credentials("username", "password");
+    let mqttoptions = get_mqttoptions("plcc_register_dev", &mqtt_server, mqtt_server_port);
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
     let topic_request_query = format!("/sys.dbc/{app_name}/S-dataservice/F-GetRegister");
     let topic_response_query = format!("/{app_name}/sys.dbc/S-dataservice/F-GetRegister");
@@ -483,9 +477,7 @@ pub async fn cloud_event() -> Result<(), AdapterErr> {
     let app_name = env.get_app_name();
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
-    let mut mqttoptions = MqttOptions::new("plcc_event", &mqtt_server, mqtt_server_port);
-    mqttoptions.set_keep_alive(Duration::from_secs(5));
-    mqttoptions.set_max_packet_size(1024 * 1024 * 100, 1024 * 1024 * 100);
+    let mqttoptions = get_mqttoptions("plcc_event", &mqtt_server, mqtt_server_port);
     // mqttoptions.set_credentials("username", "password");
     let topic_request = format!("/ext.syy.phSmc/{app_name}/S-smclink/F-PlccEvent");
     let topic_response = format!("/{app_name}/ext.syy.phSmc/S-smclink/F-PlccEvent");
@@ -990,8 +982,7 @@ async fn test_mqtt_response() {
     let app_name = env.get_app_name();
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
-    let mut mqttoptions = MqttOptions::new("my_test", &mqtt_server, mqtt_server_port);
-    mqttoptions.set_keep_alive(Duration::from_secs(5));
+    let mqttoptions = get_mqttoptions("my_test", &mqtt_server, mqtt_server_port);
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
     // 启动 event loop 的异步任务（用于保持连接和接收消息）
     tokio::spawn(async move {
