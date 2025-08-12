@@ -492,7 +492,7 @@ pub async fn cloud_event() -> Result<(), AdapterErr> {
                     if let Ok(msg) = serde_json::from_slice::<CloudEventRequest>(&p.payload) {
                         match msg.cmd {
                             CloudEventCmd::GetTgPLCCConfig => {
-                                let response = serde_json::to_string(&do_get_plcc_config()).unwrap();
+                                let response = serde_json::to_string(&do_get_plcc_config(msg)).unwrap();
                                 let _ = client_publish(&client, &topic_request, &response).await;
                             },
                             CloudEventCmd::TgAOEControl => {
@@ -517,7 +517,7 @@ pub async fn cloud_event() -> Result<(), AdapterErr> {
     Ok(())
 }
 
-fn do_get_plcc_config() -> CloudEventResponse {
+fn do_get_plcc_config(cloud_event: CloudEventRequest) -> CloudEventResponse {
     let env = Env::get_env(ADAPTER_NAME);
     let result_dir = env.get_result_dir();
     let point_dir = env.get_point_dir();
@@ -556,9 +556,8 @@ fn do_get_plcc_config() -> CloudEventResponse {
             Err(_) => {}
         }
     }
-    let time = Local::now().timestamp_millis();
     CloudEventResponse {
-        token: time.to_string(),
+        token: cloud_event.token,
         time: generate_current_time(),
         msg_info: "".to_string(),
         data: CloudEventResponseBody {
@@ -615,7 +614,7 @@ async fn do_aoe_control(cloud_event: CloudEventRequest) -> CloudEventResponse {
     };
     let time = Local::now().timestamp_millis();
     CloudEventResponse {
-        token: time.to_string(),
+        token: cloud_event.token,
         time: generate_current_time(),
         msg_info: "".to_string(),
         data,
@@ -655,7 +654,7 @@ async fn do_get_aoe_status(cloud_event: CloudEventRequest) -> CloudEventResponse
     };
     let time = Local::now().timestamp_millis();
     CloudEventResponse {
-        token: time.to_string(),
+        token: cloud_event.token,
         time: generate_current_time(),
         msg_info: "".to_string(),
         data: CloudEventResponseBody {
