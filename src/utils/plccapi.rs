@@ -343,7 +343,7 @@ async fn login() -> Result<String, AdapterErr> {
     } else {
         Err(AdapterErr {
             code: ErrCode::PlccConnectErr,
-            msg: "_PLCC登录失败".to_string(),
+            msg: "PLCC登录失败".to_string(),
         })
     }
 }
