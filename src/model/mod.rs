@@ -199,7 +199,7 @@ pub fn transports_to_south(
                         let datatype = if is_discrete {"int"} else {"float"};
                         json_write_template_yt.insert(
                             pid,
-                            format!("{{\"token\": \"%Y%m%d%H%M%S\",\"timestamp\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"timeout\": \"60\",\"body\": [{{\"name\": \"{dc_attr}\",\"val\": \"\",\"unit\": \"\",\"datatype\": \"{datatype}\"}}]}}]}}")
+                            format!("{{\"token\": \"increment:u16\",\"timestamp\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"timeout\": \"60\",\"body\": [{{\"name\": \"{dc_attr}\",\"val\": \"\",\"unit\": \"\",\"datatype\": \"{datatype}\"}}]}}]}}")
                         );
                         json_write_tag_yt.insert(
                             pid,
@@ -249,7 +249,7 @@ pub fn transports_to_south(
                         };
                         json_write_template_yk.insert(
                             pid,
-                            format!("{{\"token\": \"%Y%m%d%H%M%S\",\"time\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"name\": \"{dc_attr}\",\"type\": \"{mtype}\",\"cmd\": \"0\",\"action\": \"{action}\",\"mode\": \"{mode}\",\"timeout\": \"{timeout}\"}}]}}")
+                            format!("{{\"token\": \"increment:u16\",\"time\": \"%Y-%m-%dT%H:%M:%S.%3f%z\",\"body\": [{{\"dev\": \"{dev_guid}\",\"name\": \"{dc_attr}\",\"type\": \"{mtype}\",\"cmd\": \"0\",\"action\": \"{action}\",\"mode\": \"{mode}\",\"timeout\": \"{timeout}\"}}]}}")
                         );
                         json_write_tag_yk.insert(
                             pid,
