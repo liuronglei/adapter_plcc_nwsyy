@@ -61,8 +61,8 @@ pub async fn do_query_dev(transports: &Vec<MyTransport>) -> Result<Vec<QueryDevR
     // 发布查询消息
     let query_dev_bodys = build_query_dev_bodys(transports);
     let body = generate_query_dev(query_dev_bodys);
-    log::info!("do dev_guid mqtt send: {:?}", body);
     let payload = serde_json::to_string(&body).unwrap();
+    log::info!("do dev_guid mqtt send: {}", payload);
     client_publish(&client, &topic_request_query_dev, &payload).await?;
     // 处理订阅消息
     let (tx, rx) = oneshot::channel::<Result<Vec<QueryDevResponseBody>, AdapterErr>>();
