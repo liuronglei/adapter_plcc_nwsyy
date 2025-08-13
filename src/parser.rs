@@ -551,6 +551,7 @@ impl ParserManager {
                 Ok(transports) => {
                     log::info!("start do dev_guid mqtt");
                     let devs = query_dev(&transports).await?;
+                    log::info!("do dev_guid mqtt receive: {:?}", devs);
                     log::info!("end do dev_guid mqtt");
                     let dev_mapping = build_dev_mapping(&devs);
                     let (new_transports, current_id) = transports_to_south(transports, points_mapping, &dev_mapping, point_param, point_discrete)?;
