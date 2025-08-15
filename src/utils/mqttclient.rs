@@ -16,7 +16,8 @@ use crate::utils::localapi::{query_dev_mapping, query_aoe_mapping};
 use crate::utils::plccapi::{do_query_aoe_status, do_aoe_action};
 
 pub fn get_mqttoptions(user_name: &str, mqtt_server: &str, mqtt_server_port: u16) -> MqttOptions {
-    let mut mqttoptions = MqttOptions::new(user_name, mqtt_server, mqtt_server_port);
+    let time = Local::now().timestamp_millis();
+    let mut mqttoptions = MqttOptions::new(format!("{user_name}_{time}"), mqtt_server, mqtt_server_port);
     mqttoptions.set_max_packet_size(1024 * 1024 * 100, 1024 * 1024 * 100);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     mqttoptions
