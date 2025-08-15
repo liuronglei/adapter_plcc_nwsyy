@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::model::north::{MyPbAoeResult, MyMeasurement, MyAoe, MyTransport};
+use crate::{model::north::{MyAoe, MyMeasurement, MyPbAoeResult, MyTransport}, ErrCode};
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct RegisterApp {
@@ -291,7 +291,7 @@ pub struct CloudEventResponseBody {
     pub transports: Option<Vec<MyTransport>>,
     pub aoes: Option<Vec<MyAoe>>,
     pub aoes_status: Option<Vec<CloudEventAoeStatus>>,
-    pub code: u64,
+    pub code: ErrCode,
     pub msg: String,
 }
 

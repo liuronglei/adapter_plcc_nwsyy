@@ -1,3 +1,5 @@
+use serde_repr::{Serialize_repr, Deserialize_repr};
+
 pub mod runner;
 pub mod parser;
 pub mod db;
@@ -17,7 +19,7 @@ pub const URL_RUNNING_AOES: &str = "api/v1/running_aoes";
 pub const URL_AOE_CONTROL: &str = "api/v1/controls/aoes";
 
 #[repr(u16)]
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Serialize_repr, Deserialize_repr)]
 pub enum ErrCode {
     Success = 200,
     PlccAdapterNotFound = 601,
@@ -46,6 +48,9 @@ pub enum ErrCode {
     QueryRegisterDevErr = 632,
     InternalErr = 633,
     IoErr = 634,
+    DataJsonDeserializeErr = 635,
+    AoeIdNotFound = 636,
+    PlccActionErr = 637,
     Other = 699,
 }
 

@@ -505,7 +505,19 @@ pub async fn cloud_event() -> Result<(), AdapterErr> {
                                 let _ = client_publish(&client, &topic_request, &response).await;
                             }
                         }
-                    };
+                    } else {
+                        let time = Local::now().timestamp_millis();
+                        let data = get_aoe_status_body(None, ErrCode::DataJsonDeserializeErr, "Json格式错误".to_string());
+                        let result = CloudEventResponse {
+                            token: time.to_string(),
+                            time: generate_current_time(),
+                            msg_info: "".to_string(),
+                            data,
+                        };
+                        let response = serde_json::to_string(&result).unwrap();
+                        let _ = client_publish(&client, &topic_request, &response).await;
+                        log::error!("do cloud_event 序列化错误: {:?}", p.payload);
+                    }
                 }
                 Ok(_) => {}
                 Err(e) => {
@@ -566,7 +578,7 @@ fn do_get_plcc_config(cloud_event: CloudEventRequest) -> CloudEventResponse {
             transports,
             aoes,
             aoes_status: None,
-            code: 200,
+            code: ErrCode::Success,
             msg: "".to_string(),
         }
     }
@@ -582,12 +594,12 @@ async fn do_aoe_control(cloud_event: CloudEventRequest) -> CloudEventResponse {
                             if let Some(north_aoe_id) = aoe_mapping.iter().find_map(|(k, v)| if *v == status.aoe_id { Some(*k) } else { None }) {
                                 status.aoe_id = north_aoe_id;
                             } else {
-                                break 'result get_aoe_status_body(None, 502, "未找到北向aoe_id".to_string());
+                                break 'result get_aoe_status_body(None, ErrCode::AoeIdNotFound, "未找到北向aoe_id".to_string());
                             }
                         }
                     },
                     Err(e) => {
-                        break 'result get_aoe_status_body(None, 501, e.msg);
+                        break 'result get_aoe_status_body(None, ErrCode::InternalErr, e.msg);
                     }
                 }
                 let aoe_action = aoes_status.iter().map(|status| {
@@ -602,18 +614,17 @@ async fn do_aoe_control(cloud_event: CloudEventRequest) -> CloudEventResponse {
                 }).collect::<Vec<AoeAction>>();
                 match do_aoe_action(AoeControl { AoeActions: aoe_action }).await {
                     Ok(_) => {
-                        get_aoe_status_body(Some(aoes_status), 200, "".to_string())
+                        get_aoe_status_body(Some(aoes_status), ErrCode::Success, "".to_string())
                     }
-                    Err(e) => get_aoe_status_body(None, 501, e.msg)
+                    Err(e) => get_aoe_status_body(None, ErrCode::PlccActionErr, e.msg)
                 }
             } else {
-                get_aoe_status_body(None, 501, "body.aoes_status不能为空".to_string())
+                get_aoe_status_body(None, ErrCode::DataJsonDeserializeErr, "body.aoes_status不能为空".to_string())
             }
         } else {
-            get_aoe_status_body(None, 501, "body不能为空".to_string())
+            get_aoe_status_body(None, ErrCode::DataJsonDeserializeErr, "body不能为空".to_string())
         }
     };
-    let time = Local::now().timestamp_millis();
     CloudEventResponse {
         token: cloud_event.token,
         time: generate_current_time(),
@@ -632,7 +643,7 @@ async fn do_get_aoe_status(cloud_event: CloudEventRequest) -> CloudEventResponse
                             if let Some(north_aoe_id) = aoe_mapping.get(&status.aoe_id) {
                                 status.aoe_id = *north_aoe_id;
                             } else {
-                                break 'result (None, 502, "未找到北向aoe_id".to_string());
+                                break 'result (None, ErrCode::AoeIdNotFound, "未找到北向aoe_id".to_string());
                             }
                         }
                         if let Some(body) = cloud_event.body {
@@ -641,19 +652,18 @@ async fn do_get_aoe_status(cloud_event: CloudEventRequest) -> CloudEventResponse
                                 aoes_status.retain(|x| b_set.contains(&x.aoe_id));
                             }
                         };
-                        (Some(aoes_status), 200, "".to_string())
+                        (Some(aoes_status), ErrCode::Success, "".to_string())
                     },
                     Err(e) => {
-                        (None, 502, e.msg)
+                        (None, ErrCode::InternalErr, e.msg)
                     }
                 }
             },
             Err(e) => {
-                (None, 503, e.msg)
+                (None, ErrCode::PlccActionErr, e.msg)
             }
         }
     };
-    let time = Local::now().timestamp_millis();
     CloudEventResponse {
         token: cloud_event.token,
         time: generate_current_time(),
@@ -669,7 +679,7 @@ async fn do_get_aoe_status(cloud_event: CloudEventRequest) -> CloudEventResponse
     }
 }
 
-fn get_aoe_status_body(aoes_status: Option<Vec<CloudEventAoeStatus>>, code: u64, msg: String) -> CloudEventResponseBody {
+fn get_aoe_status_body(aoes_status: Option<Vec<CloudEventAoeStatus>>, code: ErrCode, msg: String) -> CloudEventResponseBody {
     CloudEventResponseBody {
         points: None,
         transports: None,
