@@ -263,6 +263,8 @@ pub struct KeepAliveResponse {
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct CloudEventRequest {
     pub token: String,
+    #[serde(rename = "requestId")]
+    pub request_id: String,
     pub time: String,
     #[serde(rename = "msgInfo")]
     pub msg_info: String,
@@ -279,6 +281,8 @@ pub struct CloudEventRequestBody {
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct CloudEventResponse {
     pub token: String,
+    #[serde(rename = "requestId")]
+    pub request_id: String,
     pub time: String,
     #[serde(rename = "msgInfo")]
     pub msg_info: String,

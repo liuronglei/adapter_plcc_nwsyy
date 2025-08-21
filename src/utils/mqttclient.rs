@@ -511,6 +511,7 @@ pub async fn cloud_event() -> Result<(), AdapterErr> {
                         let data = get_aoe_status_body(None, ErrCode::DataJsonDeserializeErr, "Json格式错误".to_string());
                         let result = CloudEventResponse {
                             token: time.to_string(),
+                            request_id: time.to_string(),
                             time: generate_current_time(),
                             msg_info: "".to_string(),
                             data,
@@ -572,6 +573,7 @@ fn do_get_plcc_config(cloud_event: CloudEventRequest) -> CloudEventResponse {
     }
     CloudEventResponse {
         token: cloud_event.token,
+        request_id: cloud_event.request_id,
         time: generate_current_time(),
         msg_info: "".to_string(),
         data: CloudEventResponseBody {
@@ -628,6 +630,7 @@ async fn do_aoe_control(cloud_event: CloudEventRequest) -> CloudEventResponse {
     };
     CloudEventResponse {
         token: cloud_event.token,
+        request_id: cloud_event.request_id,
         time: generate_current_time(),
         msg_info: "".to_string(),
         data,
@@ -667,6 +670,7 @@ async fn do_get_aoe_status(cloud_event: CloudEventRequest) -> CloudEventResponse
     };
     CloudEventResponse {
         token: cloud_event.token,
+        request_id: cloud_event.request_id,
         time: generate_current_time(),
         msg_info: "".to_string(),
         data: CloudEventResponseBody {
