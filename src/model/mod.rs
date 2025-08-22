@@ -851,3 +851,12 @@ pub fn aoe_action_result_to_north(action_result: PbActionResult, points_mapping:
         var_values: action_result.var_values,
     })
 }
+
+pub fn aoe_event_result_to_north(event_result: PbEventResult) -> Result<MyPbEventResult, AdapterErr> {
+    Ok(MyPbEventResult{
+        id: event_result.id,
+        start_time: event_result.start_time,
+        end_time: event_result.end_time,
+        final_result: event_result.final_result,
+    })
+}

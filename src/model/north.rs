@@ -1,6 +1,7 @@
 use std::collections::HashMap;
-
+use derive_more::Display;
 use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, DisplayFromStr};
 
 use crate::{AdapterErr, ErrCode};
 
@@ -87,6 +88,7 @@ pub struct MyPoints {
     pub delete: Option<Vec<String>>,
 }
 
+#[serde_as]
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct MyMeasurement {
     /// 唯一的id
@@ -124,6 +126,7 @@ pub struct MyMeasurement {
     /// 是否是soe点
     pub is_soe: bool,
     /// 默认值存储在8个字节，需要根据is_discrete来转换成具体的值
+    #[serde_as(as = "DisplayFromStr")]
     pub init_value: u64,
     /// 测点描述
     pub desc: String,
@@ -139,17 +142,21 @@ pub struct PointParam {
     pub mode: Option<String>,
 }
 
+#[serde_as]
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct MyAoes {
     pub aoes: Option<Vec<MyAoe>>,
     pub add: Option<Vec<MyAoe>>,
     pub edit: Option<Vec<MyAoe>>,
+    #[serde_as(as = "Option<Vec<DisplayFromStr>>")]
     pub delete: Option<Vec<u64>>,
 }
 
+#[serde_as]
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct MyAoe {
     /// aoe id
+    #[serde_as(as = "DisplayFromStr")]
     pub id: u64,
     /// aoe name
     pub name: String,
@@ -163,21 +170,26 @@ pub struct MyAoe {
     pub variables: Vec<(String, String)>,
 }
 
-
+#[serde_as]
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct MyEventNode {
+    #[serde_as(as = "DisplayFromStr")]
     pub id: u64,
     pub name: String,
     pub node_type: crate::model::south::NodeType,
     pub expr: String,
     /// 事件还未发生的等待超时时间
+    #[serde_as(as = "DisplayFromStr")]
     pub timeout: u64,
 }
 
+#[serde_as]
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct MyActionEdge {
     pub name: String,
+    #[serde_as(as = "DisplayFromStr")]
     pub source_node: u64,
+    #[serde_as(as = "DisplayFromStr")]
     pub target_node: u64,
     /// action失败时的处理方式
     pub failure_mode: crate::model::south::FailureMode,
@@ -235,16 +247,17 @@ pub struct MySetPoints {
     pub analogs: HashMap<String, String>,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[serde_as]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Display)]
 pub enum MyTriggerType {
     // 简单固定周期触发
-    SimpleRepeat(u64),
+    SimpleRepeat(#[serde_as(as = "DisplayFromStr")] u64),
     // cron expression
     TimeDrive(String),
     // 事件驱动，AOE开始节点条件满足即触发
     EventDrive(String),
     // 事件驱动 && Simple drive
-    EventRepeatMix(u64),
+    EventRepeatMix(#[serde_as(as = "DisplayFromStr")] u64),
     // 事件驱动 && Time drive
     EventTimeMix(String),
 }
@@ -277,27 +290,130 @@ impl MyTransport {
     }
 }
 
+#[serde_as]
 #[derive(Serialize, Deserialize, PartialEq, Clone, Default, Debug)]
 pub struct MyPbAoeResult {
     pub aoe_id: Option<String>,
+    #[serde_as(as = "Option<DisplayFromStr>")]
     pub start_time: Option<u64>,
+    #[serde_as(as = "Option<DisplayFromStr>")]
     pub end_time: Option<u64>,
-    pub event_results: Vec<crate::model::south::PbEventResult>,
+    pub event_results: Vec<MyPbEventResult>,
     pub action_results: Vec<MyPbActionResult>,
 }
 
+#[serde_as]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Default, Debug)]
+pub struct MyPbEventResult {
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub id: Option<u64>,
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub start_time: Option<u64>,
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub end_time: Option<u64>,
+    pub final_result: Option<crate::model::south::EventEvalResult>,
+}
+
+#[serde_as]
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct MyPbActionResult {
+    #[serde_as(as = "Option<DisplayFromStr>")]
     pub source_id: Option<u64>,
+    #[serde_as(as = "Option<DisplayFromStr>")]
     pub target_id: Option<u64>,
+    #[serde_as(as = "Option<DisplayFromStr>")]
     pub start_time: Option<u64>,
+    #[serde_as(as = "Option<DisplayFromStr>")]
     pub end_time: Option<u64>,
     pub final_result: Option<crate::model::south::ActionExeResult>,
     pub fail_code: Option<u32>,
     pub yk_points: Vec<String>,
+    #[serde_as(as = "Vec<DisplayFromStr>")]
     pub yk_values: Vec<i64>,
     pub yt_points: Vec<String>,
     pub yt_values: Vec<f64>,
     pub variables: Vec<String>,
     pub var_values: Vec<f64>,
+}
+
+#[test]
+fn test_aoe_parse() {
+    let item = MyAoes {
+        aoes: Some(vec![MyAoe {
+            id: 1,
+            name: "a".to_string(),
+            events: vec![MyEventNode {
+                id: 2,
+                name: "b".to_string(),
+                node_type: crate::model::south::NodeType::ConditionNode,
+                expr: "c".to_string(),
+                timeout: 3,
+            }],
+            actions: vec![MyActionEdge {
+                name: "d".to_string(),
+                source_node: 4,
+                target_node: 5,
+                failure_mode: crate::model::south::FailureMode::Default,
+                action: MyEigAction::None("e".to_string()),
+            }],
+            trigger_type: MyTriggerType::SimpleRepeat(6),
+            variables: vec![("f".to_string(), "g".to_string())],
+        }]),
+        add: None,
+        edit: None,
+        delete: Some(vec![1]),
+    };
+    let to_str = serde_json::to_string(&item).unwrap();
+    println!("to_str: {}", to_str);
+    match serde_json::from_slice::<MyAoes>(to_str.as_bytes()) {
+        Ok(msg) => println!("from_str: {:?}", msg),
+        Err(e) => println!("err: {:?}", e),
+    }
+    // let to_str = to_str.replace("\"1\"", "1").replace("\"2\"", "2").replace("\"3\"", "3");
+    println!("to_str2: {}", to_str);
+    match serde_json::from_slice::<MyAoes>(to_str.as_bytes()) {
+        Ok(msg) => println!("from_str2: {:?}", msg),
+        Err(e) => println!("err2: {:?}", e),
+    }
+}
+
+#[test]
+fn test_aoe_result_parse() {
+    let item = MyPbAoeResult {
+        aoe_id: Some("a".to_string()),
+        start_time: Some(2),
+        end_time: Some(3),
+        event_results: vec![MyPbEventResult {
+            id: Some(4),
+            start_time: Some(5),
+            end_time: Some(6),
+            final_result: Some(crate::model::south::EventEvalResult::Happen),
+        }],
+        action_results: vec![MyPbActionResult {
+            source_id: Some(7),
+            target_id: Some(8),
+            start_time: Some(9),
+            end_time: Some(10),
+            final_result: Some(crate::model::south::ActionExeResult::NotRun),
+            fail_code: Some(11),
+            yk_points: vec!["b".to_string()],
+            yk_values: vec![-1],
+            yt_points: vec!["c".to_string()],
+            yt_values: vec![1.1],
+            variables: vec!["d".to_string()],
+            var_values: vec![2.2],
+        }],
+    };
+    let to_str = serde_json::to_string(&item).unwrap();
+    println!("to_str: {}", to_str);
+    match serde_json::from_slice::<MyAoes>(to_str.as_bytes()) {
+        Ok(msg) => println!("from_str: {:?}", msg),
+        Err(e) => println!("err: {:?}", e),
+    }
+    // let to_str = to_str.replace("\"1\"", "1").replace("\"2\"", "2").replace("\"3\"", "3");
+    println!("to_str2: {}", to_str);
+    match serde_json::from_slice::<MyAoes>(to_str.as_bytes()) {
+        Ok(msg) => println!("from_str2: {:?}", msg),
+        Err(e) => println!("err2: {:?}", e),
+    }
 }

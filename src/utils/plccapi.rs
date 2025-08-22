@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use rumqttc::{AsyncClient, MqttOptions};
+use rumqttc::AsyncClient;
 use reqwest::{Client, StatusCode};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use serde_json::json;
@@ -8,13 +8,13 @@ use base64::{Engine, engine::general_purpose::STANDARD as b64_standard};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use tokio::time::{interval, Duration};
-use crate::model::aoe_action_result_to_north;
+use crate::model::{aoe_event_result_to_north, aoe_action_result_to_north};
 use crate::model::datacenter::CloudEventAoeStatus;
 use crate::model::south::{AoeModel, Measurement, PbAoeResults, Transport, AoeControl, AoeAction};
-use crate::model::north::{MyPbAoeResult, MyPbActionResult};
+use crate::model::north::{MyPbAoeResult, MyPbEventResult, MyPbActionResult};
 use crate::utils::mqttclient::{get_mqttoptions, client_publish, generate_aoe_update, generate_aoe_set, query_register_dev};
-use crate::utils::point_param_map;
-use crate::utils::localapi::query_aoe_mapping;
+use crate::utils::{point_param_map, param_point_map};
+use crate::utils::localapi::{query_aoe_mapping, query_point_mapping};
 use crate::{AdapterErr, ErrCode, ADAPTER_NAME, URL_AOES, URL_AOE_RESULTS, URL_LOGIN, URL_POINTS, URL_RESET,
     URL_TRANSPORTS, URL_UNRUN_AOES, URL_RUNNING_AOES, URL_AOE_CONTROL};
 use crate::env::Env;
@@ -466,7 +466,14 @@ async fn do_aoe_upload(client: &AsyncClient, topic_request_update: &str, topic_r
     let my_aoes = query_aoes(token.to_string()).await?;
     let aids = my_aoes.iter().map(|v| v.id).collect::<Vec<u64>>();
     let aoe_results = query_aoe_result(token.to_string(), aids).await?;
-    let points_mapping = point_param_map::get_all();
+    // 查询映射，如果映射为空，则从数据库填充
+    let mut points_mapping = point_param_map::get_all();
+    if points_mapping.is_empty() {
+        let param_point_map = query_point_mapping().await?;
+        param_point_map::save_all(param_point_map.clone());
+        point_param_map::save_reversal(param_point_map);
+        points_mapping = point_param_map::get_all();
+    }
     let aoe_mapping = query_aoe_mapping().await?;
     let my_aoe_result = aoe_results.results.iter()
         .filter(|a| {
@@ -482,6 +489,9 @@ async fn do_aoe_upload(client: &AsyncClient, topic_request_update: &str, topic_r
             }
         })
         .map(|a|{
+            let event_results = a.event_results.iter().filter_map(|event_result|{
+                aoe_event_result_to_north(event_result.clone()).ok()
+            }).collect::<Vec<MyPbEventResult>>();
             let action_results = a.action_results.iter().filter_map(|action_result|{
                 aoe_action_result_to_north(action_result.clone(), &points_mapping).ok()
             }).collect::<Vec<MyPbActionResult>>();
@@ -498,7 +508,7 @@ async fn do_aoe_upload(client: &AsyncClient, topic_request_update: &str, topic_r
                 aoe_id,
                 start_time: a.start_time,
                 end_time: a.end_time,
-                event_results: a.event_results.clone(),
+                event_results,
                 action_results,
             }
         }).collect::<Vec<MyPbAoeResult>>();

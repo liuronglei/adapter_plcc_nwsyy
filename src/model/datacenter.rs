@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, DisplayFromStr};
 
 use crate::{model::north::{MyAoe, MyMeasurement, MyPbAoeResult, MyTransport}, ErrCode};
 
@@ -272,8 +273,10 @@ pub struct CloudEventRequest {
     pub body: Option<CloudEventRequestBody>,
 }
 
+#[serde_as]
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct CloudEventRequestBody {
+    #[serde_as(as = "Option<Vec<DisplayFromStr>>")]
     pub aoes_id: Option<Vec<u64>>,
     pub aoes_status: Option<Vec<CloudEventAoeStatus>>,
 }
@@ -299,8 +302,10 @@ pub struct CloudEventResponseBody {
     pub msg: String,
 }
 
+#[serde_as]
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct CloudEventAoeStatus {
+    #[serde_as(as = "DisplayFromStr")]
     pub aoe_id: u64,
     pub aoe_status: u8,
 }
@@ -310,4 +315,34 @@ pub enum CloudEventCmd {
     GetTgPLCCConfig,
     TgAOEControl,
     GetTgAOEStatus
+}
+
+#[test]
+fn test_json_parse() {
+    let item = CloudEventRequest {
+        token: "a".to_string(),
+        request_id: "b".to_string(),
+        time: "c".to_string(),
+        msg_info: "d".to_string(),
+        cmd: CloudEventCmd::GetTgAOEStatus,
+        body: Some(CloudEventRequestBody {
+            aoes_id: Some(vec![1, 2]),
+            aoes_status: Some(vec![CloudEventAoeStatus {
+                aoe_id: 3,
+                aoe_status: 4
+            }]),
+        }),
+    };
+    let to_str = serde_json::to_string(&item).unwrap();
+    println!("to_str: {}", to_str);
+    match serde_json::from_slice::<CloudEventRequest>(to_str.as_bytes()) {
+        Ok(msg) => println!("from_str: {:?}", msg),
+        Err(e) => println!("err: {:?}", e),
+    }
+    // let to_str = to_str.replace("\"1\"", "1").replace("\"2\"", "2").replace("\"3\"", "3");
+    println!("to_str2: {}", to_str);
+    match serde_json::from_slice::<CloudEventRequest>(to_str.as_bytes()) {
+        Ok(msg) => println!("from_str2: {:?}", msg),
+        Err(e) => println!("err2: {:?}", e),
+    }
 }

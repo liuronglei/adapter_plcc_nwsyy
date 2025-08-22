@@ -1028,7 +1028,6 @@ async fn test_mqtt_response() {
         let _ = client_publish(&client, &tp, &body).await;
 
         let tp = format!("/{app_name}/sys.iot/S-otaservice/F-GetDCAttr");
-        
         let body = serde_json::to_string(&QueryDevResponse {
             token: "".to_string(),
             time: "".to_string(),
