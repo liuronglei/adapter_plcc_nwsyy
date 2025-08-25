@@ -590,12 +590,13 @@ fn do_get_plcc_config(cloud_event: CloudEventRequest) -> CloudEventResponse {
 async fn do_aoe_control(cloud_event: CloudEventRequest) -> CloudEventResponse {
     let data = 'result: {
         if let Some(body) = cloud_event.body {
-            if let Some(mut aoes_status) = body.aoes_status {
+            if let Some(aoes_status) = body.aoes_status {
+                let mut south_aoes_status = aoes_status.clone();
                 match query_aoe_mapping().await {
                     Ok(aoe_mapping) => {
-                        for status in aoes_status.iter_mut() {
-                            if let Some(north_aoe_id) = aoe_mapping.iter().find_map(|(k, v)| if *v == status.aoe_id { Some(*k) } else { None }) {
-                                status.aoe_id = north_aoe_id;
+                        for status in south_aoes_status.iter_mut() {
+                            if let Some(south_aoe_id) = aoe_mapping.iter().find_map(|(k, v)| if *v == status.aoe_id { Some(*k) } else { None }) {
+                                status.aoe_id = south_aoe_id;
                             } else {
                                 break 'result get_aoe_status_body(None, ErrCode::AoeIdNotFound, "未找到北向aoe_id".to_string());
                             }
@@ -605,7 +606,7 @@ async fn do_aoe_control(cloud_event: CloudEventRequest) -> CloudEventResponse {
                         break 'result get_aoe_status_body(None, ErrCode::InternalErr, e.msg);
                     }
                 }
-                let aoe_action = aoes_status.iter().map(|status| {
+                let aoe_action = south_aoes_status.iter().map(|status| {
                     match status.aoe_status {
                         0 => {
                             AoeAction::StopAoe(status.aoe_id)
