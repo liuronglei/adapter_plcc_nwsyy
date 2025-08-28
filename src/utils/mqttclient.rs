@@ -1116,5 +1116,28 @@ async fn test_mqtt_response() {
             }],
         }).unwrap();
         let _ = client_publish(&client, &tp, &body).await;
+
+        let tp = format!("/ext.syy.phSmc/{app_name}/S-smclink/F-PlccEvent");
+        let body = serde_json::to_string(&CloudEventResponse {
+            token: "123456".to_string(),
+            request_id: "cac99431-94ee-40e2-a0e8-fbdd6ceacabe".to_string(),
+            time: "2025-08-25T10:49:24+8:00".to_string(),
+            msg_info: "".to_string(),
+            data: CloudEventResponseBody {
+                points: None,
+                transports: None,
+                aoes: None,
+                aoes_status: Some(vec![CloudEventAoeStatus {
+                    aoe_id: 1955881650638458880,
+                    aoe_status: 0,
+                },CloudEventAoeStatus {
+                    aoe_id: 1955881650631516321,
+                    aoe_status: 0,
+                }]),
+                code: ErrCode::Success,
+                msg: "".to_string(),
+            },
+        }).unwrap();
+        let _ = client_publish(&client, &tp, &body).await;
     }
 }

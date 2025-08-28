@@ -57,20 +57,8 @@ pub async fn update_aoes(aoes: Vec<AoeModel>) -> Result<(), AdapterErr> {
 pub async fn do_reset() -> Result<(), AdapterErr> {
     let token = login().await?;
     // 记录重置前的AOE状态
-    let aoes_status = do_query_aoe_status().await?;
-    reset(token.clone()).await?;
-    // 重置后恢复AOE状态
-    let my_aoe_action = aoes_status.iter().map(|status| {
-        match status.aoe_status {
-            0 => {
-                AoeAction::StopAoe(status.aoe_id)
-            },
-            _ => {
-                AoeAction::StartAoe(status.aoe_id)
-            }
-        }
-    }).collect::<Vec<AoeAction>>();
-    aoe_action(token, AoeControl { AoeActions: my_aoe_action }).await
+    let unrun_aoes = query_unrun_aoes(token.clone()).await?;
+    reset(token.clone(), unrun_aoes).await
 }
 
 async fn delete_points(token: String, ids: Vec<u64>) -> Result<(), AdapterErr> {
@@ -380,7 +368,7 @@ fn get_header(token: String) -> HeaderMap {
     headers
 }
 
-async fn reset(token: String) -> Result<(), AdapterErr> {
+async fn reset(token: String, unrun_aoes: Vec<u64>) -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
     let url = format!("{plcc_server}/{URL_RESET}");
@@ -388,6 +376,7 @@ async fn reset(token: String) -> Result<(), AdapterErr> {
     let client = Client::new();
     if let Ok(response) = client
         .post(&url)
+        .json(&unrun_aoes)
         .headers(headers)
         .send().await {
         if response.status() == StatusCode::OK {
