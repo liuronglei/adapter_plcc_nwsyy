@@ -429,6 +429,7 @@ impl ParserManager {
         let file_name_transports = format!("{path}/{transport_dir}");
         let file_name_aoes = format!("{path}/{aoe_dir}");
         let old_point_mapping = self.query_point_mapping();
+        let old_aoe_mapping = self.query_aoe_mapping();
         let mut points_mapping: HashMap<String, u64> = HashMap::default();
         let mut point_param: HashMap<String, PointParam> = HashMap::default();
         let mut point_discrete: HashMap<String, bool> = HashMap::default();
@@ -492,7 +493,8 @@ impl ParserManager {
         }
         if !has_err {
             log::info!("start do reset");
-            match do_reset().await {
+            let new_aoe_mapping = self.query_aoe_mapping();
+            match do_reset(&old_aoe_mapping, &new_aoe_mapping).await {
                 Ok(()) => {},
                 Err(err) => {
                     log::error!("{}", err.msg);

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use rumqttc::AsyncClient;
 use reqwest::{Client, StatusCode};
@@ -54,10 +54,22 @@ pub async fn update_aoes(aoes: Vec<AoeModel>) -> Result<(), AdapterErr> {
     save_aoes(token, aoes).await
 }
 
-pub async fn do_reset() -> Result<(), AdapterErr> {
-    let token = login().await?;
+pub async fn do_reset(old_aoe_mapping: &HashMap<u64, u64>, new_aoe_mapping: &HashMap<u64, u64>) -> Result<(), AdapterErr> {
     // 记录重置前的AOE状态
+    let token = login().await?;
     let unrun_aoes = query_unrun_aoes(token.clone()).await?;
+    let new_aoe_values = new_aoe_mapping.values().copied().collect::<HashSet<u64>>();
+    let unrun_aoes = unrun_aoes
+        .iter()
+        .filter_map(|k| {
+            old_aoe_mapping.get(k).and_then(|v| {
+                if new_aoe_values.contains(v) {
+                    Some(*k)
+                } else {
+                    None
+                }
+            })
+        }).collect::<Vec<u64>>();
     reset(token.clone(), unrun_aoes).await
 }
 
