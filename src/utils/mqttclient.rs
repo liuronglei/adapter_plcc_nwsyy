@@ -155,6 +155,15 @@ pub async fn do_register_sync() -> Result<(), AdapterErr> {
 }
 
 async fn do_register_model() -> Result<(), AdapterErr> {
+    if !get_has_model_registered().await? {
+        start_register_model().await
+    } else {
+        log::info!("model已注册，跳过本次注册");
+        Ok(())
+    }
+}
+
+async fn start_register_model() -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
@@ -232,7 +241,94 @@ async fn do_register_model() -> Result<(), AdapterErr> {
     Ok(())
 }
 
+async fn get_has_model_registered() -> Result<bool, AdapterErr> {
+    let env = Env::get_env(ADAPTER_NAME);
+    let mqtt_server = env.get_mqtt_server();
+    let mqtt_server_port = env.get_mqtt_server_port();
+    let mqtt_timeout = env.get_mqtt_timeout();
+    let app_name = env.get_app_name();
+    let app_model = env.get_app_model();
+    let mqttoptions = get_mqttoptions("get_model_register", &mqtt_server, mqtt_server_port);
+    let topic_request_register = format!("/sys.dbc/{app_name}/S-dataservice/F-GetModel");
+    let topic_response_register = format!("/{app_name}/sys.dbc/S-dataservice/F-GetModel");
+    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
+    // 订阅注册消息返回
+    client_subscribe(&client, &topic_response_register).await?;
+    // 发布注册消息
+    let body = generate_get_model_register(app_model.clone());
+    let payload = serde_json::to_string(&body).unwrap();
+    client_publish(&client, &topic_request_register, &payload).await?;
+    // 处理订阅消息
+    let (tx, rx) = oneshot::channel::<Result<bool, AdapterErr>>();
+    tokio::spawn(async move {
+        loop {
+            let event = eventloop.poll().await;
+            match event {
+                Ok(Event::Incoming(Incoming::Publish(p))) => {
+                    if p.topic == topic_response_register {
+                        let send_result = match serde_json::from_slice::<GetModelResponse>(&p.payload) {
+                            Ok(msg) => {
+                                let mut has_registered = false;
+                                for msg_body in msg.body {
+                                    if msg_body.model == app_model {
+                                        has_registered = true;
+                                        break;
+                                    }
+                                }
+                                tx.send(Ok(has_registered))
+                            }
+                            Err(e) => tx.send(Err(AdapterErr {
+                                code: ErrCode::ModelRegisterErr,
+                                msg: format!("获取model注册信息失败，解析返回字符串错误: {:?}", e),
+                            })),
+                        };
+                        if send_result.is_err() {
+                            log::error!("do get_has_model_registered error: receive mqtt massage failed");
+                        }
+                        break;
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    let _ = tx.send(Err(AdapterErr {
+                        code: ErrCode::ModelRegisterErr,
+                        msg: format!("获取model注册信息失败，发生错误: {:?}", e),
+                    }));
+                    break;
+                }
+            }
+        }
+    });
+    match timeout(Duration::from_secs(mqtt_timeout), rx).await {
+        Ok(Ok(result)) => {
+            match result {
+                Ok(b) => {
+                    return Ok(b);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(Err(_)) => return Err(AdapterErr {
+            code: ErrCode::ModelRegisterErr,
+            msg: "获取model注册信息，等待响应失败".to_string(),
+        }),
+        Err(_) => return Err(AdapterErr {
+            code: ErrCode::ModelRegisterErr,
+            msg: "获取model注册信息超时，未收到MQTT响应".to_string(),
+        }),
+    }
+}
+
 async fn do_register_app() -> Result<(), AdapterErr> {
+    if !get_has_app_registered().await? {
+        start_register_app().await
+    } else {
+        log::info!("app已注册，跳过本次注册");
+        Ok(())
+    }
+}
+
+async fn start_register_app() -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
@@ -308,6 +404,84 @@ async fn do_register_app() -> Result<(), AdapterErr> {
         }),
     }
     Ok(())
+}
+
+async fn get_has_app_registered() -> Result<bool, AdapterErr> {
+    let env = Env::get_env(ADAPTER_NAME);
+    let mqtt_server = env.get_mqtt_server();
+    let mqtt_server_port = env.get_mqtt_server_port();
+    let mqtt_timeout = env.get_mqtt_timeout();
+    let app_name = env.get_app_name();
+    let app_model = env.get_app_model();
+    let mqttoptions = get_mqttoptions("get_app_register", &mqtt_server, mqtt_server_port);
+    let topic_request_register = format!("/sys.dbc/{app_name}/S-dataservice/F-GetRegister");
+    let topic_response_register = format!("/{app_name}/sys.dbc/S-dataservice/F-GetRegister");
+    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
+    // 订阅注册消息返回
+    client_subscribe(&client, &topic_response_register).await?;
+    // 发布注册消息
+    let body = generate_get_app_register(app_model.clone());
+    let payload = serde_json::to_string(&body).unwrap();
+    client_publish(&client, &topic_request_register, &payload).await?;
+    // 处理订阅消息
+    let (tx, rx) = oneshot::channel::<Result<bool, AdapterErr>>();
+    tokio::spawn(async move {
+        loop {
+            let event = eventloop.poll().await;
+            match event {
+                Ok(Event::Incoming(Incoming::Publish(p))) => {
+                    if p.topic == topic_response_register {
+                        let send_result = match serde_json::from_slice::<RegisterDevResult>(&p.payload) {
+                            Ok(msg) => {
+                                let mut has_registered = false;
+                                for msg_body in msg.body {
+                                    if msg_body.model == app_model {
+                                        has_registered = true;
+                                        break;
+                                    }
+                                }
+                                tx.send(Ok(has_registered))
+                            }
+                            Err(e) => tx.send(Err(AdapterErr {
+                                code: ErrCode::ModelRegisterErr,
+                                msg: format!("获取app注册信息失败，解析返回字符串错误: {:?}", e),
+                            })),
+                        };
+                        if send_result.is_err() {
+                            log::error!("do get_has_app_registered error: receive mqtt massage failed");
+                        }
+                        break;
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    let _ = tx.send(Err(AdapterErr {
+                        code: ErrCode::ModelRegisterErr,
+                        msg: format!("获取app注册信息失败，发生错误: {:?}", e),
+                    }));
+                    break;
+                }
+            }
+        }
+    });
+    match timeout(Duration::from_secs(mqtt_timeout), rx).await {
+        Ok(Ok(result)) => {
+            match result {
+                Ok(b) => {
+                    return Ok(b);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(Err(_)) => return Err(AdapterErr {
+            code: ErrCode::ModelRegisterErr,
+            msg: "获取app注册信息，等待响应失败".to_string(),
+        }),
+        Err(_) => return Err(AdapterErr {
+            code: ErrCode::ModelRegisterErr,
+            msg: "获取app注册信息超时，未收到MQTT响应".to_string(),
+        }),
+    }
 }
 
 pub async fn do_data_query() -> Result<(), AdapterErr> {
@@ -693,6 +867,24 @@ fn get_aoe_status_body(aoes_status: Option<Vec<CloudEventAoeStatus>>, code: ErrC
         aoes_status,
         code,
         msg,
+    }
+}
+
+fn generate_get_app_register(model: String) -> QueryRegisterDev {
+    let time = Local::now().timestamp_millis();
+    QueryRegisterDev {
+        token: time.to_string(),
+        time: generate_current_time(),
+        body: vec![model],
+    }
+}
+
+fn generate_get_model_register(model: String) -> GetModel {
+    let time = Local::now().timestamp_millis();
+    GetModel {
+        token: time.to_string(),
+        time: generate_current_time(),
+        body: vec![model],
     }
 }
 
@@ -1107,7 +1299,7 @@ async fn test_mqtt_response() {
             token: "".to_string(),
             time: "".to_string(),
             body: vec![RegisterDevResultBody {
-                model: "".to_string(),
+                model: "DC_PLCC".to_string(),
                 port: "".to_string(),
                 body: vec![DeviceEntry { addr: "".to_string(), appname: "".to_string(), desc: "".to_string(), dev: "app_dev".to_string(), 
                     device_type: "".to_string(), guid: "".to_string(), isReport: "".to_string(), manu_id: "".to_string(), 
@@ -1137,6 +1329,17 @@ async fn test_mqtt_response() {
                 code: ErrCode::Success,
                 msg: "".to_string(),
             },
+        }).unwrap();
+        let _ = client_publish(&client, &tp, &body).await;
+
+        let tp = format!("/{app_name}/sys.dbc/S-dataservice/F-GetModel");
+        let body = serde_json::to_string(&GetModelResponse {
+            token: "".to_string(),
+            time: "".to_string(),
+            body: vec![GetModelResponseBody {
+                model: "DC_PLCC".to_string(),
+                body: vec![]
+            }],
         }).unwrap();
         let _ = client_publish(&client, &tp, &body).await;
     }

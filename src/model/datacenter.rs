@@ -34,6 +34,26 @@ pub struct RegisterModel {
     pub body: Vec<RegisterModelBody>,
 }
 
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct GetModel {
+    pub token: String,
+    pub time: String,
+    pub body: Vec<String>,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct GetModelResponse {
+    pub token: String,
+    pub time: String,
+    pub body: Vec<GetModelResponseBody>,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct GetModelResponseBody {
+    pub model: String,
+    pub body: Vec<RegisterModelBody>,
+}
+
 #[allow(non_snake_case)]
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct RegisterModelBody {
@@ -46,7 +66,6 @@ pub struct RegisterModelBody {
     pub isReport: String,
     pub userdefine: String,
 }
-
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct RegisterResponse {
