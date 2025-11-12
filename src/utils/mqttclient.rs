@@ -939,7 +939,7 @@ fn generate_query_data(devs: &Vec<QueryDevResponseBody>) -> DataQuery {
     let body = devs.iter().flat_map(|dev|
         dev.devs.iter().map(|v|{
             DataQueryBody {
-                dev: format!("{}_{}", v.model.clone(), v.dev_guid),
+                dev: v.dev_guid.clone(),
                 totalcall: "1".to_string(),
                 body: vec![],
             }
