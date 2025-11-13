@@ -15,8 +15,7 @@ use crate::model::north::{MyPbAoeResult, MyPbEventResult, MyPbActionResult};
 use crate::utils::mqttclient::{get_mqttoptions, client_publish, generate_aoe_update, generate_aoe_set, query_register_dev};
 use crate::utils::{point_param_map, param_point_map};
 use crate::utils::localapi::{query_aoe_mapping, query_point_mapping};
-use crate::{AdapterErr, ErrCode, ADAPTER_NAME, URL_AOES, URL_AOE_RESULTS, URL_LOGIN, URL_POINTS, URL_RESET,
-    URL_TRANSPORTS, URL_UNRUN_AOES, URL_RUNNING_AOES, URL_AOE_CONTROL};
+use crate::{ADAPTER_NAME, AdapterErr, ErrCode, MODEL_FROZEN, URL_AOE_CONTROL, URL_AOE_RESULTS, URL_AOES, URL_LOGIN, URL_POINTS, URL_RESET, URL_RUNNING_AOES, URL_TRANSPORTS, URL_UNRUN_AOES};
 use crate::env::Env;
 
 const PASSWORD_V_KEY: &[u8] = b"zju-plcc";
@@ -462,8 +461,7 @@ async fn aoe_upload_loop() -> Result<(), AdapterErr> {
 }
 
 async fn do_aoe_upload(client: &AsyncClient, topic_request_update: &str, topic_request_set: &str, token: &str, last_time: &mut HashMap<u64, u64>, app_model: &str) -> Result<(), AdapterErr> {
-    let env = Env::get_env(ADAPTER_NAME);
-    let app_name = env.get_app_name();
+    let app_name = MODEL_FROZEN.to_string();
     let my_aoes = query_aoes(token.to_string()).await?;
     let aids = my_aoes.iter().map(|v| v.id).collect::<Vec<u64>>();
     let aoe_results = query_aoe_result(token.to_string(), aids).await?;

@@ -6,7 +6,7 @@ use tokio::time::{timeout, Duration};
 use tokio::sync::oneshot;
 use chrono::{Local, TimeZone};
 
-use crate::{AdapterErr, ErrCode, ADAPTER_NAME};
+use crate::{ADAPTER_NAME, AdapterErr, ErrCode, MODEL_FROZEN};
 use crate::env::Env;
 use crate::model::datacenter::*;
 use crate::model::north::{MyAoes, MyPbAoeResult, MyPoints, MyTransports, MyTransport};
@@ -957,7 +957,7 @@ fn generate_query_register_dev() -> QueryRegisterDev {
     QueryRegisterDev {
         token: time.to_string(),
         time: generate_current_time(),
-        body: vec!["DC_SDTTU_frozen".to_string()],
+        body: vec![MODEL_FROZEN.to_string()],
     }
 }
 

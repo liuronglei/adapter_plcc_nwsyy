@@ -17,6 +17,7 @@ pub const URL_RESET: &str = "api/v1/controls/reset";
 pub const URL_UNRUN_AOES: &str = "api/v1/unrun_aoes";
 pub const URL_RUNNING_AOES: &str = "api/v1/running_aoes";
 pub const URL_AOE_CONTROL: &str = "api/v1/controls/aoes";
+pub const MODEL_FROZEN: &str = "DC_SDTTU_frozen";
 
 #[repr(u16)]
 #[derive(Debug, Clone, PartialEq, Serialize_repr, Deserialize_repr)]
