@@ -1301,7 +1301,7 @@ async fn test_mqtt_response() {
             body: vec![RegisterDevResultBody {
                 model: "DC_PLCC".to_string(),
                 port: "".to_string(),
-                body: vec![DeviceEntry { addr: "".to_string(), appname: "".to_string(), desc: "".to_string(), dev: "app_dev".to_string(), 
+                body: vec![DeviceEntry { addr: "".to_string(), appname: "".to_string(), desc: "".to_string(), dev: "DC_SDTTU_frozen_1".to_string(), 
                     device_type: "".to_string(), guid: "".to_string(), isReport: "".to_string(), manu_id: "".to_string(), 
                     manu_name: "".to_string(), node_id: "".to_string(), pro_type: "".to_string(), product_id: "".to_string() }
                 ]

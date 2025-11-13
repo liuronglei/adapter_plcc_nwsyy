@@ -420,7 +420,7 @@ async fn aoe_upload_loop() -> Result<(), AdapterErr> {
     let mqtt_server = env.get_mqtt_server();
     let mqtt_server_port = env.get_mqtt_server_port();
     let app_name = env.get_app_name();
-    let app_model = env.get_app_model();
+    let frozen_model = MODEL_FROZEN.to_string();
 
     let mut ticker = interval(Duration::from_secs(5));
     let mut count = 0;
@@ -454,14 +454,15 @@ async fn aoe_upload_loop() -> Result<(), AdapterErr> {
             }
         }
         count += 1;
-        if let Err(e) = do_aoe_upload(&client, &topic_request_update, &topic_request_set, &token, &mut last_time, &app_model).await {
+        if let Err(e) = do_aoe_upload(&client, &topic_request_update, &topic_request_set, &token, &mut last_time, &frozen_model).await {
             log::error!("do aoe_result_upload error: {}", e.msg);
         }
     }
 }
 
-async fn do_aoe_upload(client: &AsyncClient, topic_request_update: &str, topic_request_set: &str, token: &str, last_time: &mut HashMap<u64, u64>, app_model: &str) -> Result<(), AdapterErr> {
-    let app_name = MODEL_FROZEN.to_string();
+async fn do_aoe_upload(client: &AsyncClient, topic_request_update: &str, topic_request_set: &str, token: &str, last_time: &mut HashMap<u64, u64>, frozen_model: &str) -> Result<(), AdapterErr> {
+    let env = Env::get_env(ADAPTER_NAME);
+    let app_name = env.get_app_name();
     let my_aoes = query_aoes(token.to_string()).await?;
     let aids = my_aoes.iter().map(|v| v.id).collect::<Vec<u64>>();
     let aoe_results = query_aoe_result(token.to_string(), aids).await?;
@@ -513,10 +514,10 @@ async fn do_aoe_upload(client: &AsyncClient, topic_request_update: &str, topic_r
         }).collect::<Vec<MyPbAoeResult>>();
     if !my_aoe_result.is_empty() {
         let dev = query_register_dev().await?;
-        let body = generate_aoe_update(my_aoe_result.clone(), app_model.to_string(), dev.clone(), app_name.clone());
+        let body = generate_aoe_update(my_aoe_result.clone(), frozen_model.to_string(), dev.clone(), app_name.clone());
         let payload = serde_json::to_string(&body).unwrap();
         client_publish(client, topic_request_update, &payload).await?;
-        let body = generate_aoe_set(my_aoe_result, app_model.to_string(), dev, app_name);
+        let body = generate_aoe_set(my_aoe_result, frozen_model.to_string(), dev, app_name);
         let payload = serde_json::to_string(&body).unwrap();
         client_publish(client, topic_request_set, &payload).await?;
     }
