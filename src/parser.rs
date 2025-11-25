@@ -824,7 +824,7 @@ async fn query_dev(transports: &MyTransports) -> Result<Vec<QueryDevResponseBody
 
 #[test]
 fn test_parse_point() {
-    let path = "C:/项目/南网数研院/二期测试/plcccfg_V1_0_0/points.json";
+    let path = "C:/项目/nwsyy/二期测试/plcccfg_V1_0_0/points.json";
     if let Ok(file) = File::open(path) {
         let reader = BufReader::new(file);
         match serde_json::from_reader::<_, MyPoints>(reader) {
@@ -840,7 +840,7 @@ fn test_parse_point() {
 
 #[test]
 fn test_parse_aoe() {
-    let path = "C:/项目/南网数研院/二期测试/plcccfg_V1_0_0/aoes.json";
+    let path = "C:/项目/nwsyy/二期测试/plcccfg_V1_0_0/aoes.json";
     if let Ok(file) = File::open(path) {
         let reader = BufReader::new(file);
         match serde_json::from_reader::<_, MyAoes>(reader) {
