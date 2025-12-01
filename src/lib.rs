@@ -18,6 +18,9 @@ pub const URL_UNRUN_AOES: &str = "api/v1/unrun_aoes";
 pub const URL_RUNNING_AOES: &str = "api/v1/running_aoes";
 pub const URL_AOE_CONTROL: &str = "api/v1/controls/aoes";
 pub const MODEL_FROZEN: &str = "DC_SDTTU_frozen";
+pub const MODEL_FROZEN_METER: &str = "DC_Meter_frozen";
+pub const MODEL_PORT_METER: &str = "PLC";
+pub const MODEL_DESC_METER: &str = "metering";
 
 #[repr(u16)]
 #[derive(Debug, Clone, PartialEq, Serialize_repr, Deserialize_repr)]
@@ -52,6 +55,7 @@ pub enum ErrCode {
     DataJsonDeserializeErr = 635,
     AoeIdNotFound = 636,
     PlccActionErr = 637,
+    MqttTimeoutErr = 638,
     Other = 699,
 }
 

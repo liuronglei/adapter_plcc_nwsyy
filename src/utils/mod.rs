@@ -10,6 +10,7 @@ pub mod mqttclient;
 pub mod point_param_map;
 pub mod param_point_map;
 pub mod register_result;
+pub mod meter_data;
 pub mod log_init;
 
 use regex::Regex;

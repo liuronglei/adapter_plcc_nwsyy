@@ -14,9 +14,9 @@ rocksdb = { version = "0.23", default-features = false, features = ["zstd", "bin
 
 
 actix = { version = "0.13"}
-actix-rt = { version = "2.10"}
+actix-rt = { version = "2.11"}
 actix-multipart = { version = "0.7"}
-actix-web = { version = "4.11", features = ["rustls-0_23"]}
+actix-web = { version = "4.12", features = ["rustls-0_23"]}
 actix-cors = { version = "0.7"}
 actix-files = { version = "0.6"}
 
@@ -39,6 +39,15 @@ fnv = "1.0"
 num-complex = "0.4"
 ndarray = "0.16"
 once_cell = "1.19"
+tokio-cron-scheduler = "0.15"
+
+petgraph = { version = "0.8", features = ["serde-1"] }
+polars-core = { version = "0.52", default-features = false, features = ["serde", "diagonal_concat", "timezones", "dtype-u8", "dtype-u16", "dtype-i8", "dtype-i16"] }
+
+#eig-domain = { path = "../eig-rc/eig-domain", default-features = false, features = ["model"] }
+#eig-expr = { path = "../eig-rc/eig-expr", default-features = false, features = ["model"] }
+#eig-aoe = { path = "../eig-rc/eig-aoe", default-features = false, features = ["model"] }
+#mems = { path = "../eig-rc/mems", default-features = false, features = ["tools", "model"] }
 
 [profile.release]
 lto = true

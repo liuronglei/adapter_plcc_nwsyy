@@ -3,6 +3,94 @@ use serde_with::{serde_as, DisplayFromStr};
 
 use crate::{model::north::{MyAoe, MyMeasurement, MyPbAoeResult, MyTransport}, ErrCode};
 
+pub trait HasToken {
+    fn token(&self) -> String;
+}
+
+impl HasToken for RegisterApp {
+    fn token(&self) -> String {
+        self.token.clone()
+    }
+}
+
+impl HasToken for QueryDevResponse {
+    fn token(&self) -> String {
+        self.token.clone()
+    }
+}
+
+impl HasToken for QueryDev {
+    fn token(&self) -> String {
+        self.token.clone()
+    }
+}
+
+impl HasToken for RegisterModel {
+    fn token(&self) -> String {
+        self.token.clone()
+    }
+}
+
+impl HasToken for RegisterResponse {
+    fn token(&self) -> String {
+        self.token.clone()
+    }
+}
+
+impl HasToken for GetModel {
+    fn token(&self) -> String {
+        self.token.clone()
+    }
+}
+
+impl HasToken for GetModelResponse {
+    fn token(&self) -> String {
+        self.token.clone()
+    }
+}
+
+impl HasToken for QueryRegisterDev {
+    fn token(&self) -> String {
+        self.token.clone()
+    }
+}
+
+impl HasToken for RegisterDevResult {
+    fn token(&self) -> String {
+        self.token.clone()
+    }
+}
+
+impl HasToken for RequestHistory {
+    fn token(&self) -> String {
+        self.token.clone()
+    }
+}
+
+impl HasToken for ResponseHistory {
+    fn token(&self) -> String {
+        self.token.clone()
+    }
+}
+
+impl HasToken for DataQuery {
+    fn token(&self) -> String {
+        self.token.clone()
+    }
+}
+
+impl HasToken for KeepAliveResponse {
+    fn token(&self) -> String {
+        self.token.clone()
+    }
+}
+
+impl HasToken for CloudEventResponse {
+    fn token(&self) -> String {
+        self.token.clone()
+    }
+}
+
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct RegisterApp {
     pub token: String,
@@ -178,14 +266,14 @@ pub struct RegisterDevResult {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RegisterDevResultBody {
-    pub body: Vec<DeviceEntry>,
+    pub body: Vec<RegisterDevEntry>,
     pub model: String,
     pub port: String,
 }
 
 #[allow(non_snake_case)]
 #[derive(Debug, Serialize, Deserialize)]
-pub struct DeviceEntry {
+pub struct RegisterDevEntry {
     pub addr: String,
     pub appname: String,
     pub desc: String,
@@ -193,7 +281,8 @@ pub struct DeviceEntry {
     #[serde(rename = "deviceType")]
     pub device_type: String,
     pub guid: String,
-    pub isReport: String,
+    #[serde(rename = "isReport")]
+    pub is_report: String,
     #[serde(rename = "manuID")]
     pub manu_id: String,
     #[serde(rename = "manuName")]
@@ -334,6 +423,85 @@ pub enum CloudEventCmd {
     GetTgPLCCConfig,
     TgAOEControl,
     GetTgAOEStatus
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RequestHistory {
+    pub token: String,
+    pub time: String,
+    pub choice: String,
+    pub time_type: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub time_span: String,
+    pub frozentype: String,
+    pub body: Vec<RequestHistoryBody>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RequestHistoryBody {
+    pub dev: String,
+    pub body: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ResponseHistory {
+    pub token: String,
+    pub time: String,
+    pub body: Vec<ResponseHistoryBody>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ResponseHistoryBody {
+    pub dev: String,
+    pub body: Vec<ResponseHistoryData>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ResponseHistoryData {
+    pub timestamp: String,
+    pub timestartgather: String,
+    pub timeendgather: String,
+    pub additionalcheck: String,
+    pub body: Vec<ResponseHistoryMeasure>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ResponseHistoryMeasure {
+    pub name: String,
+    pub val: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RequestGuid {
+    pub token: String,
+    pub time: String,
+    pub body: Vec<RequestGuidBody>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RequestGuidBody {
+    pub model: String,
+    pub port: String,
+    pub addr: String,
+    pub desc: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ResponseGuid {
+    pub token: String,
+    pub time: String,
+    pub body: Vec<ResponseGuidBody>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ResponseGuidBody {
+    pub model: String,
+    pub port: String,
+    pub addr: String,
+    pub desc: String,
+    pub guid: String,
+    pub dev: String,
 }
 
 #[test]

@@ -1,12 +1,17 @@
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Write};
 use std::collections::{HashSet, HashMap};
+use std::pin::Pin;
 use rumqttc::{AsyncClient, Event, Incoming, MqttOptions, QoS};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use tokio::time::{timeout, Duration};
 use tokio::sync::oneshot;
-use chrono::{Local, TimeZone};
+use chrono::{Local, TimeZone, FixedOffset, Duration as ChronoDuration};
+use tokio_cron_scheduler::{Job, JobScheduler};
 
-use crate::{ADAPTER_NAME, AdapterErr, ErrCode, MODEL_FROZEN};
+use crate::utils::meter_data::export_meter_csv;
+use crate::{ADAPTER_NAME, AdapterErr, ErrCode, MODEL_FROZEN, MODEL_FROZEN_METER};
 use crate::env::Env;
 use crate::model::datacenter::*;
 use crate::model::north::{MyAoes, MyPbAoeResult, MyPoints, MyTransports, MyTransport};
@@ -49,84 +54,39 @@ pub async fn client_publish(client: &AsyncClient, topic: &str, payload: &str) ->
 
 pub async fn do_query_dev(transports: &Vec<MyTransport>) -> Result<Vec<QueryDevResponseBody>, AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
-    let mqtt_server = env.get_mqtt_server();
-    let mqtt_server_port = env.get_mqtt_server_port();
-    let mqtt_timeout = env.get_mqtt_timeout();
     let app_name = env.get_app_name();
-    let mqttoptions = get_mqttoptions("plcc_query_dev", &mqtt_server, mqtt_server_port);
-    let topic_request_query_dev = format!("/sys.iot/{app_name}/S-otaservice/F-GetDCAttr");
-    let topic_response_query_dev = format!("/{app_name}/sys.iot/S-otaservice/F-GetDCAttr");
-    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
-    // 订阅查询消息返回
-    client_subscribe(&client, &topic_response_query_dev).await?;
-    // 发布查询消息
     let query_dev_bodys = build_query_dev_bodys(transports);
     let body = generate_query_dev(query_dev_bodys);
-    let payload = serde_json::to_string(&body).unwrap();
-    log::info!("do dev_guid mqtt send: {}", payload);
-    client_publish(&client, &topic_request_query_dev, &payload).await?;
-    // 处理订阅消息
-    let (tx, rx) = oneshot::channel::<Result<Vec<QueryDevResponseBody>, AdapterErr>>();
-    tokio::spawn(async move {
-        loop {
-            let event = eventloop.poll().await;
-            match event {
-                Ok(Event::Incoming(Incoming::Publish(p))) => {
-                    if p.topic == topic_response_query_dev {
-                        let send_result = match serde_json::from_slice::<QueryDevResponse>(&p.payload) {
-                            Ok(msg) => {
-                                let mut has_error = false;
-                                let mut result = vec![];
-                                for data in msg.devices.clone() {
-                                    for dev in &data.devs {
-                                        if data.service_id.as_str() == "serviceNotExist" || dev.not_found.clone().is_some_and(|x|!x.is_empty()) {
-                                            has_error = true;
-                                            break;
-                                        }
-                                    }
-                                    result.push(data);
-                                }
-                                if has_error {
-                                    tx.send(Err(AdapterErr {
-                                        code: ErrCode::QueryDevAttrNotFound,
-                                        msg: format!("查询设备信息报错，有部分属性在数据中心未找到：{:?}", msg),
-                                    }))
-                                } else {
-                                    tx.send(Ok(result))
-                                }
-                            }
-                            Err(e) => tx.send(
-                                Err(AdapterErr {
-                                    code: ErrCode::QueryDevDeserializeErr,
-                                    msg: format!("查询设备信息报错，返回字符串反序列化失败: {:?}", e),
-                                }))
-                        };
-                        if send_result.is_err() {
-                            log::error!("do query_dev_info error: receive mqtt massage failed");
-                        }
+    match mqtt_acquirer::<_, QueryDevResponse>(
+        "plcc_query_dev".to_string(),
+        format!("/sys.iot/{app_name}/S-otaservice/F-GetDCAttr"),
+        format!("/{app_name}/sys.iot/S-otaservice/F-GetDCAttr"),
+        body,
+    ).await {
+        Ok(msg) => {
+            let mut has_error = false;
+            let mut result = vec![];
+            for data in msg.devices.clone() {
+                for dev in &data.devs {
+                    if data.service_id.as_str() == "serviceNotExist" || dev.not_found.clone().is_some_and(|x|!x.is_empty()) {
+                        has_error = true;
                         break;
                     }
                 }
-                Ok(_) => {}
-                Err(e) => {
-                    let _ = tx.send(Err(AdapterErr {
-                        code: ErrCode::MqttConnectErr,
-                        msg: format!("执行dev_guid时mqtt连接失败: {:?}", e),
-                    }));
-                    break;
-                }
+                result.push(data);
+            }
+            if !has_error {
+                Ok(result)
+            } else {
+                Err(AdapterErr {
+                    code: ErrCode::QueryDevAttrNotFound,
+                    msg: format!("查询设备信息报错，有部分属性在数据中心未找到：{:?}", msg),
+                })
             }
         }
-    });
-    match timeout(Duration::from_secs(mqtt_timeout), rx).await {
-        Ok(Ok(result)) => result,
-        Ok(Err(_)) => Err(AdapterErr {
-            code: ErrCode::QueryDevTimeout,
-            msg: "查询南向设备信息，等待响应失败".to_string(),
-        }),
-        Err(_) => Err(AdapterErr {
-            code: ErrCode::QueryDevTimeout,
-            msg: "查询南向设备信息超时，未收到MQTT响应".to_string(),
+        Err(e) => Err(AdapterErr {
+            code: e.code,
+            msg: format!("查询南向设备信息失败，{}", e.msg),
         }),
     }
 }
@@ -165,156 +125,57 @@ async fn do_register_model() -> Result<(), AdapterErr> {
 
 async fn start_register_model() -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
-    let mqtt_server = env.get_mqtt_server();
-    let mqtt_server_port = env.get_mqtt_server_port();
-    let mqtt_timeout = env.get_mqtt_timeout();
     let app_name = env.get_app_name();
     let app_model = env.get_app_model();
-    let mqttoptions = get_mqttoptions("plcc_model_register", &mqtt_server, mqtt_server_port);
-    let topic_request_register = format!("/sys.dbc/{app_name}/S-dataservice/F-SetModel");
-    let topic_response_register = format!("/{app_name}/sys.dbc/S-dataservice/F-SetModel");
-    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
-    // 订阅注册消息返回
-    client_subscribe(&client, &topic_response_register).await?;
-    // 发布注册消息
     let body = generate_register_model(app_model);
-    let payload = serde_json::to_string(&body).unwrap();
-    client_publish(&client, &topic_request_register, &payload).await?;
-    // 处理订阅消息
-    let (tx, rx) = oneshot::channel::<Result<bool, AdapterErr>>();
-    tokio::spawn(async move {
-        loop {
-            let event = eventloop.poll().await;
-            match event {
-                Ok(Event::Incoming(Incoming::Publish(p))) => {
-                    if p.topic == topic_response_register {
-                        let send_result = match serde_json::from_slice::<RegisterResponse>(&p.payload) {
-                            Ok(msg) => {
-                                let result = msg.ack.to_lowercase() == "true".to_string();
-                                tx.send(Ok(result))
-                            }
-                            Err(e) => tx.send(Err(AdapterErr {
-                                code: ErrCode::ModelRegisterErr,
-                                msg: format!("注册model失败，解析返回字符串错误: {:?}", e),
-                            })),
-                        };
-                        if send_result.is_err() {
-                            log::error!("do register_model error: receive mqtt massage failed");
-                        }
-                        break;
-                    }
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    let _ = tx.send(Err(AdapterErr {
-                        code: ErrCode::ModelRegisterErr,
-                        msg: format!("注册model失败，发生错误: {:?}", e),
-                    }));
-                    break;
-                }
+    match mqtt_acquirer::<_, RegisterResponse>(
+        "plcc_model_register".to_string(),
+        format!("/sys.dbc/{app_name}/S-dataservice/F-SetModel"),
+        format!("/{app_name}/sys.dbc/S-dataservice/F-SetModel"),
+        body,
+    ).await {
+        Ok(msg) => {
+            let result = msg.ack.to_lowercase() == "true".to_string();
+            if !result {
+                return Err(AdapterErr {
+                    code: ErrCode::ModelRegisterErr,
+                    msg: "注册model失败，响应结果为false".to_string(),
+                });
+            } else {
+                Ok(())
             }
         }
-    });
-    match timeout(Duration::from_secs(mqtt_timeout), rx).await {
-        Ok(Ok(result)) => {
-            match result {
-                Ok(b) => {
-                    if !b {
-                        return Err(AdapterErr {
-                            code: ErrCode::ModelRegisterErr,
-                            msg: "注册model失败，响应结果为false".to_string(),
-                        });
-                    }
-                }
-                Err(e) => return Err(e),
-            }
-        }
-        Ok(Err(_)) => return Err(AdapterErr {
-            code: ErrCode::ModelRegisterErr,
-            msg: "注册model，等待响应失败".to_string(),
-        }),
-        Err(_) => return Err(AdapterErr {
-            code: ErrCode::ModelRegisterErr,
-            msg: "注册model超时，未收到MQTT响应".to_string(),
+        Err(e) => Err(AdapterErr {
+            code: e.code,
+            msg: format!("注册model失败，{}", e.msg),
         }),
     }
-    Ok(())
 }
 
 async fn get_has_model_registered() -> Result<bool, AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
-    let mqtt_server = env.get_mqtt_server();
-    let mqtt_server_port = env.get_mqtt_server_port();
-    let mqtt_timeout = env.get_mqtt_timeout();
     let app_name = env.get_app_name();
     let app_model = env.get_app_model();
-    let mqttoptions = get_mqttoptions("get_model_register", &mqtt_server, mqtt_server_port);
-    let topic_request_register = format!("/sys.dbc/{app_name}/S-dataservice/F-GetModel");
-    let topic_response_register = format!("/{app_name}/sys.dbc/S-dataservice/F-GetModel");
-    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
-    // 订阅注册消息返回
-    client_subscribe(&client, &topic_response_register).await?;
-    // 发布注册消息
     let body = generate_get_model_register(app_model.clone());
-    let payload = serde_json::to_string(&body).unwrap();
-    client_publish(&client, &topic_request_register, &payload).await?;
-    // 处理订阅消息
-    let (tx, rx) = oneshot::channel::<Result<bool, AdapterErr>>();
-    tokio::spawn(async move {
-        loop {
-            let event = eventloop.poll().await;
-            match event {
-                Ok(Event::Incoming(Incoming::Publish(p))) => {
-                    if p.topic == topic_response_register {
-                        let send_result = match serde_json::from_slice::<GetModelResponse>(&p.payload) {
-                            Ok(msg) => {
-                                let mut has_registered = false;
-                                for msg_body in msg.body {
-                                    if msg_body.model == app_model {
-                                        has_registered = true;
-                                        break;
-                                    }
-                                }
-                                tx.send(Ok(has_registered))
-                            }
-                            Err(e) => tx.send(Err(AdapterErr {
-                                code: ErrCode::ModelRegisterErr,
-                                msg: format!("获取model注册信息失败，解析返回字符串错误: {:?}", e),
-                            })),
-                        };
-                        if send_result.is_err() {
-                            log::error!("do get_has_model_registered error: receive mqtt massage failed");
-                        }
-                        break;
-                    }
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    let _ = tx.send(Err(AdapterErr {
-                        code: ErrCode::ModelRegisterErr,
-                        msg: format!("获取model注册信息失败，发生错误: {:?}", e),
-                    }));
+    match mqtt_acquirer::<_, GetModelResponse>(
+        "get_model_register".to_string(),
+        format!("/sys.dbc/{app_name}/S-dataservice/F-GetModel"),
+        format!("/{app_name}/sys.dbc/S-dataservice/F-GetModel"),
+        body,
+    ).await {
+        Ok(msg) => {
+            let mut has_registered = false;
+            for msg_body in msg.body {
+                if msg_body.model == app_model {
+                    has_registered = true;
                     break;
                 }
             }
+            Ok(has_registered)
         }
-    });
-    match timeout(Duration::from_secs(mqtt_timeout), rx).await {
-        Ok(Ok(result)) => {
-            match result {
-                Ok(b) => {
-                    return Ok(b);
-                }
-                Err(e) => return Err(e),
-            }
-        }
-        Ok(Err(_)) => return Err(AdapterErr {
-            code: ErrCode::ModelRegisterErr,
-            msg: "获取model注册信息，等待响应失败".to_string(),
-        }),
-        Err(_) => return Err(AdapterErr {
-            code: ErrCode::ModelRegisterErr,
-            msg: "获取model注册信息超时，未收到MQTT响应".to_string(),
+        Err(e) => Err(AdapterErr {
+            code: e.code,
+            msg: format!("获取model注册信息失败，{}", e.msg),
         }),
     }
 }
@@ -330,156 +191,57 @@ async fn do_register_app() -> Result<(), AdapterErr> {
 
 async fn start_register_app() -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
-    let mqtt_server = env.get_mqtt_server();
-    let mqtt_server_port = env.get_mqtt_server_port();
-    let mqtt_timeout = env.get_mqtt_timeout();
     let app_name = env.get_app_name();
     let app_model = env.get_app_model();
-    let mqttoptions = get_mqttoptions("plcc_app_register", &mqtt_server, mqtt_server_port);
-    let topic_request_register = format!("/sys.dbc/{app_name}/S-dataservice/F-Register");
-    let topic_response_register = format!("/{app_name}/sys.dbc/S-dataservice/F-Register");
-    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
-    // 订阅注册消息返回
-    client_subscribe(&client, &topic_response_register).await?;
-    // 发布注册消息
     let body = generate_register_app(app_model);
-    let payload = serde_json::to_string(&body).unwrap();
-    client_publish(&client, &topic_request_register, &payload).await?;
-    // 处理订阅消息
-    let (tx, rx) = oneshot::channel::<Result<bool, AdapterErr>>();
-    tokio::spawn(async move {
-        loop {
-            let event = eventloop.poll().await;
-            match event {
-                Ok(Event::Incoming(Incoming::Publish(p))) => {
-                    if p.topic == topic_response_register {
-                        let send_result = match serde_json::from_slice::<RegisterResponse>(&p.payload) {
-                            Ok(msg) => {
-                                let result = msg.ack.to_lowercase() == "true".to_string();
-                                tx.send(Ok(result))
-                            }
-                            Err(e) => tx.send(Err(AdapterErr {
-                                code: ErrCode::AppRegisterErr,
-                                msg: format!("注册APP，解析返回字符串失败: {:?}", e),
-                            })),
-                        };
-                        if send_result.is_err() {
-                            log::error!("do register_app error: receive mqtt massage failed");
-                        }
-                        break;
-                    }
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    let _ = tx.send(Err(AdapterErr {
-                        code: ErrCode::AppRegisterErr,
-                        msg: format!("注册APP，发生错误: {:?}", e),
-                    }));
-                    break;
-                }
+    match mqtt_acquirer::<_, RegisterResponse>(
+        "plcc_app_register".to_string(),
+        format!("/sys.dbc/{app_name}/S-dataservice/F-Register"),
+        format!("/{app_name}/sys.dbc/S-dataservice/F-Register"),
+        body,
+    ).await {
+        Ok(msg) => {
+            let result = msg.ack.to_lowercase() == "true".to_string();
+            if !result {
+                return Err(AdapterErr {
+                    code: ErrCode::AppRegisterErr,
+                    msg: "注册APP失败，响应结果为false".to_string(),
+                });
+            } else {
+                Ok(())
             }
         }
-    });
-    match timeout(Duration::from_secs(mqtt_timeout), rx).await {
-        Ok(Ok(result)) => {
-            match result {
-                Ok(b) => {
-                    if !b {
-                        return Err(AdapterErr {
-                            code: ErrCode::AppRegisterErr,
-                            msg: "注册APP失败，响应结果为false".to_string(),
-                        });
-                    }
-                }
-                Err(e) => return Err(e),
-            }
-        }
-        Ok(Err(_)) => return Err(AdapterErr {
-            code: ErrCode::AppRegisterErr,
-            msg: "注册APP，等待响应失败".to_string(),
-        }),
-        Err(_) => return Err(AdapterErr {
-            code: ErrCode::AppRegisterErr,
-            msg: "注册APP超时，未收到MQTT响应".to_string(),
+        Err(e) => Err(AdapterErr {
+            code: e.code,
+            msg: format!("注册APP失败，{}", e.msg),
         }),
     }
-    Ok(())
 }
 
 async fn get_has_app_registered() -> Result<bool, AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
-    let mqtt_server = env.get_mqtt_server();
-    let mqtt_server_port = env.get_mqtt_server_port();
-    let mqtt_timeout = env.get_mqtt_timeout();
     let app_name = env.get_app_name();
     let app_model = env.get_app_model();
-    let mqttoptions = get_mqttoptions("get_app_register", &mqtt_server, mqtt_server_port);
-    let topic_request_register = format!("/sys.dbc/{app_name}/S-dataservice/F-GetRegister");
-    let topic_response_register = format!("/{app_name}/sys.dbc/S-dataservice/F-GetRegister");
-    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
-    // 订阅注册消息返回
-    client_subscribe(&client, &topic_response_register).await?;
-    // 发布注册消息
     let body = generate_get_app_register(app_model.clone());
-    let payload = serde_json::to_string(&body).unwrap();
-    client_publish(&client, &topic_request_register, &payload).await?;
-    // 处理订阅消息
-    let (tx, rx) = oneshot::channel::<Result<bool, AdapterErr>>();
-    tokio::spawn(async move {
-        loop {
-            let event = eventloop.poll().await;
-            match event {
-                Ok(Event::Incoming(Incoming::Publish(p))) => {
-                    if p.topic == topic_response_register {
-                        let send_result = match serde_json::from_slice::<RegisterDevResult>(&p.payload) {
-                            Ok(msg) => {
-                                let mut has_registered = false;
-                                for msg_body in msg.body {
-                                    if msg_body.model == app_model {
-                                        has_registered = true;
-                                        break;
-                                    }
-                                }
-                                tx.send(Ok(has_registered))
-                            }
-                            Err(e) => tx.send(Err(AdapterErr {
-                                code: ErrCode::ModelRegisterErr,
-                                msg: format!("获取app注册信息失败，解析返回字符串错误: {:?}", e),
-                            })),
-                        };
-                        if send_result.is_err() {
-                            log::error!("do get_has_app_registered error: receive mqtt massage failed");
-                        }
-                        break;
-                    }
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    let _ = tx.send(Err(AdapterErr {
-                        code: ErrCode::ModelRegisterErr,
-                        msg: format!("获取app注册信息失败，发生错误: {:?}", e),
-                    }));
+    match mqtt_acquirer::<_, RegisterDevResult>(
+        "get_app_register".to_string(),
+        format!("/sys.dbc/{app_name}/S-dataservice/F-GetRegister"),
+        format!("/{app_name}/sys.dbc/S-dataservice/F-GetRegister"),
+        body,
+    ).await {
+        Ok(msg) => {
+            let mut has_registered = false;
+            for msg_body in msg.body {
+                if msg_body.model == app_model {
+                    has_registered = true;
                     break;
                 }
             }
+            Ok(has_registered)
         }
-    });
-    match timeout(Duration::from_secs(mqtt_timeout), rx).await {
-        Ok(Ok(result)) => {
-            match result {
-                Ok(b) => {
-                    return Ok(b);
-                }
-                Err(e) => return Err(e),
-            }
-        }
-        Ok(Err(_)) => return Err(AdapterErr {
-            code: ErrCode::ModelRegisterErr,
-            msg: "获取app注册信息，等待响应失败".to_string(),
-        }),
-        Err(_) => return Err(AdapterErr {
-            code: ErrCode::ModelRegisterErr,
-            msg: "获取app注册信息超时，未收到MQTT响应".to_string(),
+        Err(e) => Err(AdapterErr {
+            code: e.code,
+            msg: format!("获取app注册信息失败，{}", e.msg),
         }),
     }
 }
@@ -496,37 +258,20 @@ pub async fn do_data_query() -> Result<(), AdapterErr> {
 }
 
 pub async fn data_query() -> Result<(), AdapterErr> {
-    let env = Env::get_env(ADAPTER_NAME);
-    let mqtt_server = env.get_mqtt_server();
-    let mqtt_server_port = env.get_mqtt_server_port();
-    let app_name = env.get_app_name();
-    let mqttoptions = get_mqttoptions("plcc_data_query", &mqtt_server, mqtt_server_port);
-    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
-    let topic_request_query = format!("/sys.dbc/{app_name}/S-dataservice/F-GetRealData");
-    let topic_response_query = format!("/{app_name}/sys.dbc/S-dataservice/F-GetRealData");
     let devs = query_dev_mapping().await?;
     if !devs.is_empty() {
-        let payload = serde_json::to_string(&generate_query_data(&devs)).unwrap();// 订阅注册消息返回
-        client_subscribe(&client, &topic_response_query).await?;
-        client_publish(&client, &topic_request_query, &payload).await?;
-        tokio::spawn(async move {
-            loop {
-                match eventloop.poll().await {
-                    Ok(Event::Incoming(Incoming::Publish(p))) => {
-                        if p.topic == topic_response_query {
-                            break;
-                        }
-                    }
-                    Ok(_) => {}
-                    Err(e) => {
-                        log::error!("do data_query error: {:?}", e);
-                        break;
-                    }
-                }
-            }
-        });
+        let env = Env::get_env(ADAPTER_NAME);
+        let app_name = env.get_app_name();
+        let body = generate_query_data(&devs);
+        mqtt_push_only(
+            "plcc_data_query".to_string(),
+            format!("/sys.dbc/{app_name}/S-dataservice/F-GetRealData"),
+            format!("/{app_name}/sys.dbc/S-dataservice/F-GetRealData"),
+            body,
+        ).await
+    } else {
+        Ok(())
     }
-    Ok(())
 }
 
 pub async fn do_keep_alive() -> Result<(), AdapterErr> {
@@ -541,100 +286,52 @@ pub async fn do_keep_alive() -> Result<(), AdapterErr> {
 pub async fn keep_alive() -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let app_name = env.get_app_name();
-    let mqtt_server = env.get_mqtt_server();
-    let mqtt_server_port = env.get_mqtt_server_port();
-    let mqttoptions = get_mqttoptions("plcc_keep_alive", &mqtt_server, mqtt_server_port);
-    let topic_request = format!("/sys.appman/{app_name}/S-appmanager/F-KeepAlive");
-    let topic_response = format!("/{app_name}/sys.appman/S-appmanager/F-KeepAlive");
-    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
-    // 订阅保活主题
-    client_subscribe(&client, &topic_response).await?;
-    tokio::spawn(async move {
-        loop {
-            let event = eventloop.poll().await;
-            match event {
-                Ok(Event::Incoming(Incoming::Publish(p))) => {
-                    if let Ok(msg) = serde_json::from_slice::<KeepAliveRequest>(&p.payload) {
-                        let response = serde_json::to_string(&generate_keep_alive_response(msg)).unwrap();
-                        let _ = client_publish(&client, &topic_request, &response).await;
-                    };
+    mqtt_provider(
+        "plcc_keep_alive".to_string(),
+        format!("/sys.appman/{app_name}/S-appmanager/F-KeepAlive"),
+        format!("/{app_name}/sys.appman/S-appmanager/F-KeepAlive"),
+        move |payload| {
+            Box::pin(async move {
+                if let Ok(msg) = serde_json::from_slice::<KeepAliveRequest>(&payload) {
+                    generate_keep_alive_response(msg)
+                } else {
+                    log::error!("do keep_alive 序列化错误: {payload:?}");
+                    let time = generate_current_time();
+                    KeepAliveResponse {
+                        token: time.clone(),
+                        time,
+                        ack: "true".to_string(),
+                        errmsg: "success".to_string(),
+                    }
                 }
-                Ok(_) => {}
-                Err(e) => {
-                    log::error!("do keep_alive error: {:?}", e);
-                    break;
-                }
-            }
-        }
-    });
-    Ok(())
+            })
+        },
+    ).await
 }
 
 pub async fn query_register_dev() -> Result<String, AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
-    let mqtt_server = env.get_mqtt_server();
-    let mqtt_server_port = env.get_mqtt_server_port();
-    let mqtt_timeout = env.get_mqtt_timeout();
     let app_name = env.get_app_name();
-    let mqttoptions = get_mqttoptions("plcc_register_dev", &mqtt_server, mqtt_server_port);
-    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
-    let topic_request_query = format!("/sys.dbc/{app_name}/S-dataservice/F-GetRegister");
-    let topic_response_query = format!("/{app_name}/sys.dbc/S-dataservice/F-GetRegister");
-    let payload = serde_json::to_string(&generate_query_register_dev()).unwrap();// 订阅注册消息返回
-    client_subscribe(&client, &topic_response_query).await?;
-    client_publish(&client, &topic_request_query, &payload).await?;
-    // 处理订阅消息
-    let (tx, rx) = oneshot::channel::<Result<String, AdapterErr>>();
-    tokio::spawn(async move {
-        loop {
-            let event = eventloop.poll().await;
-            match event {
-                Ok(Event::Incoming(Incoming::Publish(p))) => {
-                    if p.topic == topic_response_query {
-                        let send_result = match serde_json::from_slice::<RegisterDevResult>(&p.payload) {
-                            Ok(msg) => {
-                                let mut dev = "".to_string();
-                                if !msg.body.is_empty() {
-                                    let first_body = msg.body.first().unwrap();
-                                    if !first_body.body.is_empty() {
-                                        dev = first_body.body.first().unwrap().dev.clone();
-                                    }
-                                }
-                                tx.send(Ok(dev))
-                            }
-                            Err(e) => tx.send(Err(AdapterErr {
-                                code: ErrCode::QueryRegisterDevErr,
-                                msg: format!("查询注册dev，解析返回字符串失败: {:?}", e),
-                            })),
-                        };
-                        if send_result.is_err() {
-                            log::error!("do query_register_dev error: receive mqtt massage failed");
-                        }
-                        break;
-                    }
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    let _ = tx.send(Err(AdapterErr {
-                        code: ErrCode::QueryRegisterDevErr,
-                        msg: format!("查询注册dev，发生错误: {:?}", e),
-                    }));
-                    break;
+    let body = generate_query_register_dev();
+    match mqtt_acquirer::<_, RegisterDevResult>(
+        "plcc_register_dev".to_string(),
+        format!("/sys.dbc/{app_name}/S-dataservice/F-GetRegister"),
+        format!("/{app_name}/sys.dbc/S-dataservice/F-GetRegister"),
+        body,
+    ).await {
+        Ok(msg) => {
+            let mut dev = "".to_string();
+            if !msg.body.is_empty() {
+                let first_body = msg.body.first().unwrap();
+                if !first_body.body.is_empty() {
+                    dev = first_body.body.first().unwrap().dev.clone();
                 }
             }
+            Ok(dev)
         }
-    });
-    match timeout(Duration::from_secs(mqtt_timeout), rx).await {
-        Ok(Ok(result)) => {
-            result
-        }
-        Ok(Err(_)) => Err(AdapterErr {
-            code: ErrCode::QueryRegisterDevErr,
-            msg: "查询注册dev，等待响应失败".to_string(),
-        }),
-        Err(_) => Err(AdapterErr {
-            code: ErrCode::QueryRegisterDevErr,
-            msg: "查询注册dev超时，未收到MQTT响应".to_string(),
+        Err(e) => Err(AdapterErr {
+            code: e.code,
+            msg: format!("查询注册dev失败，{}", e.msg),
         }),
     }
 }
@@ -651,59 +348,39 @@ pub async fn do_cloud_event() -> Result<(), AdapterErr> {
 pub async fn cloud_event() -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let app_name = env.get_app_name();
-    let mqtt_server = env.get_mqtt_server();
-    let mqtt_server_port = env.get_mqtt_server_port();
-    let mqttoptions = get_mqttoptions("plcc_event", &mqtt_server, mqtt_server_port);
-    // mqttoptions.set_credentials("username", "password");
-    let topic_request = format!("/ext.syy.phSmc/{app_name}/S-smclink/F-PlccEvent");
-    let topic_response = format!("/{app_name}/ext.syy.phSmc/S-smclink/F-PlccEvent");
-    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
-    // 订阅魔方消息主题
-    client_subscribe(&client, &topic_response).await?;
-    tokio::spawn(async move {
-        loop {
-            let event = eventloop.poll().await;
-            match event {
-                Ok(Event::Incoming(Incoming::Publish(p))) => {
-                    if let Ok(msg) = serde_json::from_slice::<CloudEventRequest>(&p.payload) {
-                        match msg.cmd {
-                            CloudEventCmd::GetTgPLCCConfig => {
-                                let response = serde_json::to_string(&do_get_plcc_config(msg)).unwrap();
-                                let _ = client_publish(&client, &topic_request, &response).await;
-                            },
-                            CloudEventCmd::TgAOEControl => {
-                                let response = serde_json::to_string(&do_aoe_control(msg).await).unwrap();
-                                let _ = client_publish(&client, &topic_request, &response).await;
-                            },
-                            CloudEventCmd::GetTgAOEStatus => {
-                                let response = serde_json::to_string(&do_get_aoe_status(msg).await).unwrap();
-                                let _ = client_publish(&client, &topic_request, &response).await;
-                            }
+    mqtt_provider(
+        "plcc_event".to_string(),
+        format!("/ext.syy.phSmc/{app_name}/S-smclink/F-PlccEvent"),
+        format!("/{app_name}/ext.syy.phSmc/S-smclink/F-PlccEvent"),
+        move |payload| {
+            Box::pin(async move {
+                if let Ok(msg) = serde_json::from_slice::<CloudEventRequest>(&payload) {
+                    match msg.cmd {
+                        CloudEventCmd::GetTgPLCCConfig => {
+                            do_get_plcc_config(msg)
+                        },
+                        CloudEventCmd::TgAOEControl => {
+                            do_aoe_control(msg).await
+                        },
+                        CloudEventCmd::GetTgAOEStatus => {
+                            do_get_aoe_status(msg).await
                         }
-                    } else {
-                        let time = Local::now().timestamp_millis();
-                        let data = get_aoe_status_body(None, ErrCode::DataJsonDeserializeErr, "Json格式错误".to_string());
-                        let result = CloudEventResponse {
-                            token: time.to_string(),
-                            request_id: time.to_string(),
-                            time: generate_current_time(),
-                            msg_info: "".to_string(),
-                            data,
-                        };
-                        let response = serde_json::to_string(&result).unwrap();
-                        let _ = client_publish(&client, &topic_request, &response).await;
-                        log::error!("do cloud_event 序列化错误: {:?}", p.payload);
+                    }
+                } else {
+                    log::error!("do cloud_event 序列化错误: {payload:?}");
+                    let time = Local::now().timestamp_millis();
+                    let data = get_aoe_status_body(None, ErrCode::DataJsonDeserializeErr, "Json格式错误".to_string());
+                    CloudEventResponse {
+                        token: time.to_string(),
+                        request_id: time.to_string(),
+                        time: generate_current_time(),
+                        msg_info: "".to_string(),
+                        data,
                     }
                 }
-                Ok(_) => {}
-                Err(e) => {
-                    log::error!("do cloud_event error: {:?}", e);
-                    break;
-                }
-            }
-        }
-    });
-    Ok(())
+            })
+        },
+    ).await
 }
 
 fn do_get_plcc_config(cloud_event: CloudEventRequest) -> CloudEventResponse {
@@ -934,6 +611,18 @@ fn generate_current_time() -> String {
     now.format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string()
 }
 
+fn generate_history_data_time() -> (String, String) {
+    let tz = FixedOffset::east_opt(8 * 3600).unwrap();
+    // 今天 0 点
+    let today_0 = Local::now().date_naive().and_hms_milli_opt(0, 0, 0, 0).unwrap();
+    // 前一天 0 点
+    let yesterday_start = tz.from_local_datetime(&(today_0 - ChronoDuration::days(1))).unwrap();
+    let yesterday_end = tz.from_local_datetime(&(today_0 - ChronoDuration::seconds(1))).unwrap();
+    let start_time = yesterday_start.format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string();
+    let end_time = yesterday_end.format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string();
+    (start_time, end_time)
+}
+
 fn generate_query_data(devs: &Vec<QueryDevResponseBody>) -> DataQuery {
     let time = Local::now().timestamp_millis();
     let body = devs.iter().flat_map(|dev|
@@ -958,6 +647,15 @@ fn generate_query_register_dev() -> QueryRegisterDev {
         token: time.to_string(),
         time: generate_current_time(),
         body: vec![MODEL_FROZEN.to_string()],
+    }
+}
+
+fn generate_query_meter_dev() -> QueryRegisterDev {
+    let time = Local::now().timestamp_millis();
+    QueryRegisterDev {
+        token: time.to_string(),
+        time: generate_current_time(),
+        body: vec![MODEL_FROZEN_METER.to_string()],
     }
 }
 
@@ -1029,6 +727,43 @@ fn generate_keep_alive_response(request: KeepAliveRequest) -> KeepAliveResponse 
         errmsg: "success".to_string(),
     }
 }
+
+fn generate_query_meter_history(devs: Vec<String>) -> RequestHistory {
+    let time = Local::now().timestamp_millis();
+    let timestamp = generate_current_time();
+    let (start_time, end_time) = generate_history_data_time();
+    let body = devs.iter().map(|dev| RequestHistoryBody {
+        dev: dev.clone(),
+        body: vec!["tgSupWh".to_string()],
+    }).collect();
+    RequestHistory {
+        token: time.to_string(),
+        time: timestamp,
+        choice: "1".to_string(),
+        time_type: "timestartgather".to_string(),
+        start_time,
+        end_time,
+        time_span: "5".to_string(),
+        frozentype: "min".to_string(),
+        body,
+    }
+}
+
+// fn generate_query_meter_guid(addrs: Vec<String>) -> RequestGuid {
+//     let time = Local::now().timestamp_millis();
+//     let timestamp = generate_current_time();
+//     let body = addrs.iter().map(|addr| RequestGuidBody {
+//         model: MODEL_FROZEN_METER.to_string(),
+//         port: MODEL_PORT_METER.to_string(),
+//         addr: addr.clone(),
+//         desc: MODEL_DESC_METER.to_string(),
+//     }).collect();
+//     RequestGuid {
+//         token: time.to_string(),
+//         time: timestamp,
+//         body,
+//     }
+// }
 
 fn find_min_start_max_end(aoe_result: &Vec<MyPbAoeResult>) -> (Option<u64>, Option<u64>) {
     let min_start = aoe_result
@@ -1183,6 +918,257 @@ pub fn build_dev_mapping(devs: &Vec<QueryDevResponseBody>) -> HashMap<(String, S
     result
 }
 
+pub async fn do_meter_data_query() -> Result<(), AdapterErr> {
+    let sched = JobScheduler::new().await.unwrap();
+    let job = Job::new_async("0 0 1 * * *", |_uuid, _l| {
+        Box::pin(async move {
+            let env = Env::get_env(ADAPTER_NAME);
+            let app_name = env.get_app_name();
+            let meter_sum_no = env.get_meter_sum_no();
+            let meter_dir = env.get_meter_dir();
+            if let Ok(meter_dev_addr) = query_meter_dev().await {
+                let dev_guids = meter_dev_addr.keys().cloned().collect::<Vec<_>>();
+                let body = generate_query_meter_history(dev_guids);
+                match mqtt_acquirer::<_, ResponseHistory>(
+                    "mems_query_history_data".to_string(),
+                    format!("/sys.dbc/{app_name}/S-dataservice/F-GetFrozenData"),
+                    format!("/{app_name}/sys.dbc/S-dataservice/F-GetFrozenData"),
+                    body,
+                ).await {
+                    Ok(msg) => {
+                        // let mut meter_nos = vec![];
+                        let mut timestamps = vec![];
+                        let mut meter_data = HashMap::new();
+                        for data_body in msg.body {
+                            if let Some(addr) = meter_dev_addr.get(&data_body.dev) {
+                                for measures in data_body.body {
+                                    // meter_nos.push(addr.clone());
+                                    if !timestamps.contains(&measures.timestamp) {
+                                        timestamps.push(measures.timestamp.clone());
+                                    }
+                                    if let Some(measure) = measures.body.first() {
+                                        meter_data.insert((addr.clone(), measures.timestamp), measure.val.clone());
+                                    }
+                                }
+                            }
+                        }
+                        let csv = export_meter_csv(
+                            &meter_sum_no,
+                            timestamps,
+                            meter_data,
+                        );
+                        let mut meter_data_file = File::create(&format!("{meter_dir}/meter_data.csv")).unwrap();
+                        meter_data_file.write_all(csv.as_bytes()).unwrap();
+                    }
+                    Err(e) => {
+                        log::error!("do mems_query_history_data error: {}", e.msg);
+                    }
+                }
+            }
+        })
+    }).unwrap();
+    sched.add(job).await.unwrap();
+    sched.start().await.unwrap();
+    Ok(())
+
+    // let id = job.guid();
+    // sched.remove(&id).await.unwrap();
+}
+
+pub async fn query_meter_dev() -> Result<HashMap<String, String>, AdapterErr> {
+    let env = Env::get_env(ADAPTER_NAME);
+    let app_name = env.get_app_name();
+    let body = generate_query_meter_dev();
+    match mqtt_acquirer::<_, RegisterDevResult>(
+        "mems_meter_dev".to_string(),
+        format!("/sys.dbc/{app_name}/S-dataservice/F-GetRegister"),
+        format!("/{app_name}/sys.dbc/S-dataservice/F-GetRegister"),
+        body,
+    ).await {
+        Ok(msg) => {
+            let mut addr_guid_map = HashMap::new();
+            for dev_body in msg.body {
+                if dev_body.model == MODEL_FROZEN_METER {
+                    for dev in dev_body.body {
+                        addr_guid_map.insert(dev.dev, dev.addr);
+                    }
+                }
+            }
+            Ok(addr_guid_map)
+        }
+        Err(e) => Err(AdapterErr {
+            code: e.code,
+            msg: format!("查询表计dev失败，{}", e.msg),
+        }),
+    }
+}
+
+// pub async fn do_meter_guid_query() -> Result<ResponseGuid, AdapterErr> {
+//     let env = Env::get_env(ADAPTER_NAME);
+//     let app_name = env.get_app_name();
+//     let meter_addrs = vec!["0601020005622971".to_string(), "0601020005622972".to_string()];
+//     let body = generate_query_meter_guid(meter_addrs);
+//     match mqtt_acquirer::<_, ResponseGuid>(
+//         "get_guid_register".to_string(),
+//         format!("/sys.dbc/{app_name}/S-dataservice/F-GetGUID"),
+//         format!("/{app_name}/sys.dbc/S-dataservice/F-GetGUID"),
+//         body,
+//     ).await {
+//         Ok(msg) => {
+//             Ok(msg)
+//         }
+//         Err(e) => Err(AdapterErr {
+//             code: e.code,
+//             msg: format!("获取表计guid失败，{}", e.msg),
+//         }),
+//     }
+// }
+
+pub async fn mqtt_acquirer<T, R>(
+    mqtt_usr_name: String,
+    topic_request: String,
+    topic_response: String,
+    body: T,
+) -> Result<R, AdapterErr>
+where
+    T: Serialize + HasToken,
+    R: DeserializeOwned + HasToken + Send + 'static,
+{
+    let env = Env::get_env(ADAPTER_NAME);
+    let mqtt_server = env.get_mqtt_server();
+    let mqtt_server_port = env.get_mqtt_server_port();
+    let mqtt_timeout = env.get_mqtt_timeout();
+    let mqttoptions = get_mqttoptions(&mqtt_usr_name, &mqtt_server, mqtt_server_port);
+    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
+    let payload = serde_json::to_string(&body).unwrap();
+    client_subscribe(&client, &topic_response).await?;
+    client_publish(&client, &topic_request, &payload).await?;
+    let (tx, rx) = oneshot::channel::<Result<R, AdapterErr>>();
+    let token = body.token();
+    tokio::spawn(async move {
+        loop {
+            match eventloop.poll().await {
+                Ok(Event::Incoming(Incoming::Publish(p))) => {
+                    if p.topic == topic_response {
+                        let result = match serde_json::from_slice::<R>(&p.payload) {
+                            Ok(r) => {
+                                if r.token() == token {
+                                    // todo 只有相同token才能认定是当前消息响应
+                                }
+                                tx.send(Ok(r))
+                            }
+                            Err(e) => tx.send(Err(AdapterErr {
+                                code: ErrCode::DataJsonDeserializeErr,
+                                msg: format!("解析MQTT返回字符串失败: {e:?}"),
+                            })),
+                        };
+                        if result.is_err() {
+                            log::error!("MQTT响应发送失败");
+                        }
+                        break;
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    let _ = tx.send(Err(AdapterErr {
+                        code: ErrCode::MqttConnectErr,
+                        msg: format!("MQTT连接发生错误: {e:?}"),
+                    }));
+                    break;
+                }
+            }
+        }
+    });
+    match timeout(Duration::from_secs(mqtt_timeout), rx).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(_)) => Err(AdapterErr {
+            code: ErrCode::MqttTimeoutErr,
+            msg: "等待响应时发生错误".to_string(),
+        }),
+        Err(_) => Err(AdapterErr {
+            code: ErrCode::MqttTimeoutErr,
+            msg: "MQTT响应超时".to_string(),
+        }),
+    }
+}
+
+pub async fn mqtt_provider<F, Resp>(
+    mqtt_usr_name: String,
+    topic_request: String,
+    topic_response: String,
+    callback: F,
+) -> Result<(), AdapterErr>
+where
+    Resp: Serialize + HasToken + Sync + Send + 'static,
+    F: Fn(actix_web::web::Bytes)
+            -> Pin<Box<dyn Future<Output = Resp> + Send + 'static>>
+        + Send
+        + Sync
+        + 'static,
+{
+    let env = Env::get_env(ADAPTER_NAME);
+    let mqtt_server = env.get_mqtt_server();
+    let mqtt_server_port = env.get_mqtt_server_port();
+    let mqttoptions = get_mqttoptions(&mqtt_usr_name, &mqtt_server, mqtt_server_port);
+    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
+    client_subscribe(&client, &topic_response).await?;
+    tokio::spawn(async move {
+        loop {
+            match eventloop.poll().await {
+                Ok(Event::Incoming(Incoming::Publish(p))) => {
+                    if p.topic == topic_response {
+                        let data = callback(p.payload).await;
+                        let response = serde_json::to_string(&data).unwrap();
+                        let _ = client_publish(&client, &topic_request, &response).await;
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    log::error!("do mqtt_provider error: {e:?}");
+                    break;
+                }
+            }
+        }
+    });
+    Ok(())
+}
+
+pub async fn mqtt_push_only<T>(
+    mqtt_usr_name: String,
+    topic_request: String,
+    topic_response: String,
+    body: T,
+) -> Result<(), AdapterErr>
+where
+    T: Serialize + HasToken,
+{
+    let env = Env::get_env(ADAPTER_NAME);
+    let mqtt_server = env.get_mqtt_server();
+    let mqtt_server_port = env.get_mqtt_server_port();
+    let mqttoptions = get_mqttoptions(&mqtt_usr_name, &mqtt_server, mqtt_server_port);
+    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
+    let payload = serde_json::to_string(&body).unwrap();
+    client_subscribe(&client, &topic_response).await?;
+    client_publish(&client, &topic_request, &payload).await?;
+    tokio::spawn(async move {
+        loop {
+            match eventloop.poll().await {
+                Ok(Event::Incoming(Incoming::Publish(p))) => {
+                    if p.topic == topic_response {
+                        break;
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    log::error!("do mqtt_push_only error: {e:?}");
+                    break;
+                }
+            }
+        }
+    });
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_mqtt_response() {
     Env::init(ADAPTER_NAME);
@@ -1298,14 +1284,34 @@ async fn test_mqtt_response() {
         let body = serde_json::to_string(&RegisterDevResult {
             token: "".to_string(),
             time: "".to_string(),
-            body: vec![RegisterDevResultBody {
-                model: "DC_PLCC".to_string(),
-                port: "".to_string(),
-                body: vec![DeviceEntry { addr: "".to_string(), appname: "".to_string(), desc: "".to_string(), dev: "DC_SDTTU_frozen_1".to_string(), 
-                    device_type: "".to_string(), guid: "".to_string(), isReport: "".to_string(), manu_id: "".to_string(), 
-                    manu_name: "".to_string(), node_id: "".to_string(), pro_type: "".to_string(), product_id: "".to_string() }
-                ]
-            }],
+            body: vec![
+                RegisterDevResultBody {
+                    model: "DC_PLCC".to_string(),
+                    port: "".to_string(),
+                    body: vec![RegisterDevEntry { addr: "".to_string(), appname: "".to_string(), desc: "".to_string(), dev: "DC_SDTTU_frozen_1".to_string(), 
+                        device_type: "".to_string(), guid: "".to_string(), is_report: "".to_string(), manu_id: "".to_string(), 
+                        manu_name: "".to_string(), node_id: "".to_string(), pro_type: "".to_string(), product_id: "".to_string() }
+                    ]
+                },
+                RegisterDevResultBody {
+                    model: MODEL_FROZEN_METER.to_string(),
+                    port: "".to_string(),
+                    body: vec![
+                        RegisterDevEntry { addr: "0000000000000000".to_string(), appname: "".to_string(), desc: "".to_string(), dev: "DC_Meter_frozen_176".to_string(), 
+                            device_type: "".to_string(), guid: "176".to_string(), is_report: "".to_string(), manu_id: "".to_string(), 
+                            manu_name: "".to_string(), node_id: "".to_string(), pro_type: "".to_string(), product_id: "".to_string()
+                        },
+                        RegisterDevEntry { addr: "0601020021015579".to_string(), appname: "".to_string(), desc: "".to_string(), dev: "DC_Meter_frozen_173".to_string(), 
+                            device_type: "".to_string(), guid: "173".to_string(), is_report: "".to_string(), manu_id: "".to_string(), 
+                            manu_name: "".to_string(), node_id: "".to_string(), pro_type: "".to_string(), product_id: "".to_string()
+                        },
+                        RegisterDevEntry { addr: "0601196044360269".to_string(), appname: "".to_string(), desc: "".to_string(), dev: "DC_Meter_frozen_174".to_string(), 
+                            device_type: "".to_string(), guid: "174".to_string(), is_report: "".to_string(), manu_id: "".to_string(), 
+                            manu_name: "".to_string(), node_id: "".to_string(), pro_type: "".to_string(), product_id: "".to_string()
+                        },
+                    ]
+                },
+            ],
         }).unwrap();
         let _ = client_publish(&client, &tp, &body).await;
 
@@ -1342,5 +1348,152 @@ async fn test_mqtt_response() {
             }],
         }).unwrap();
         let _ = client_publish(&client, &tp, &body).await;
+
+        let tp = format!("/{app_name}/sys.dbc/S-dataservice/F-GetFrozenData");
+        let body = serde_json::to_string(&ResponseHistory {
+            token: "".to_string(),
+            time: "".to_string(),
+            body: vec![
+                ResponseHistoryBody {
+                    dev: "DC_Meter_frozen_176".to_string(),
+                    body: vec![
+                        ResponseHistoryData {
+                            timestamp: "2025-11-23T00:00:00.000+0800".to_string(),
+                            timestartgather: "2025-11-23T00:00:00.000+0800".to_string(),
+                            timeendgather: "2025-11-23T00:00:00.000+0800".to_string(),
+                            additionalcheck: "".to_string(),
+                            body: vec![ResponseHistoryMeasure {
+                                name: "".to_string(),
+                                val: "50".to_string(),
+                            }],
+                        },
+                        ResponseHistoryData {
+                            timestamp: "2025-11-24T00:00:00.000+0800".to_string(),
+                            timestartgather: "2025-11-24T00:00:00.000+0800".to_string(),
+                            timeendgather: "2025-11-24T00:00:00.000+0800".to_string(),
+                            additionalcheck: "".to_string(),
+                            body: vec![ResponseHistoryMeasure {
+                                name: "".to_string(),
+                                val: "60".to_string(),
+                            }]
+                        },
+                        ResponseHistoryData {
+                            timestamp: "2025-11-25T00:00:00.000+0800".to_string(),
+                            timestartgather: "2025-11-25T00:00:00.000+0800".to_string(),
+                            timeendgather: "2025-11-25T00:00:00.000+0800".to_string(),
+                            additionalcheck: "".to_string(),
+                            body: vec![ResponseHistoryMeasure {
+                                name: "".to_string(),
+                                val: "50".to_string(),
+                            }],
+                        },
+                        ResponseHistoryData {
+                            timestamp: "2025-11-26T00:00:00.000+0800".to_string(),
+                            timestartgather: "2025-11-26T00:00:00.000+0800".to_string(),
+                            timeendgather: "2025-11-26T00:00:00.000+0800".to_string(),
+                            additionalcheck: "".to_string(),
+                            body: vec![ResponseHistoryMeasure {
+                                name: "".to_string(),
+                                val: "60".to_string(),
+                            }]
+                        },
+                    ]
+                },
+                ResponseHistoryBody {
+                    dev: "DC_Meter_frozen_173".to_string(),
+                    body: vec![
+                        ResponseHistoryData {
+                            timestamp: "2025-11-23T00:00:00.000+0800".to_string(),
+                            timestartgather: "2025-11-23T00:00:00.000+0800".to_string(),
+                            timeendgather: "2025-11-23T00:00:00.000+0800".to_string(),
+                            additionalcheck: "".to_string(),
+                            body: vec![ResponseHistoryMeasure {
+                                name: "".to_string(),
+                                val: "15.5".to_string(),
+                            }],
+                        },
+                        ResponseHistoryData {
+                            timestamp: "2025-11-24T00:00:00.000+0800".to_string(),
+                            timestartgather: "2025-11-24T00:00:00.000+0800".to_string(),
+                            timeendgather: "2025-11-24T00:00:00.000+0800".to_string(),
+                            additionalcheck: "".to_string(),
+                            body: vec![ResponseHistoryMeasure {
+                                name: "".to_string(),
+                                val: "16.6".to_string(),
+                            }]
+                        },
+                        ResponseHistoryData {
+                            timestamp: "2025-11-25T00:00:00.000+0800".to_string(),
+                            timestartgather: "2025-11-25T00:00:00.000+0800".to_string(),
+                            timeendgather: "2025-11-25T00:00:00.000+0800".to_string(),
+                            additionalcheck: "".to_string(),
+                            body: vec![ResponseHistoryMeasure {
+                                name: "".to_string(),
+                                val: "15.5".to_string(),
+                            }],
+                        },
+                        ResponseHistoryData {
+                            timestamp: "2025-11-26T00:00:00.000+0800".to_string(),
+                            timestartgather: "2025-11-26T00:00:00.000+0800".to_string(),
+                            timeendgather: "2025-11-26T00:00:00.000+0800".to_string(),
+                            additionalcheck: "".to_string(),
+                            body: vec![ResponseHistoryMeasure {
+                                name: "".to_string(),
+                                val: "16.6".to_string(),
+                            }]
+                        },
+                    ]
+                },
+                ResponseHistoryBody {
+                    dev: "DC_Meter_frozen_174".to_string(),
+                    body: vec![
+                        ResponseHistoryData {
+                            timestamp: "2025-11-23T00:00:00.000+0800".to_string(),
+                            timestartgather: "2025-11-23T00:00:00.000+0800".to_string(),
+                            timeendgather: "2025-11-23T00:00:00.000+0800".to_string(),
+                            additionalcheck: "".to_string(),
+                            body: vec![ResponseHistoryMeasure {
+                                name: "".to_string(),
+                                val: "25.5".to_string(),
+                            }],
+                        },
+                        ResponseHistoryData {
+                            timestamp: "2025-11-24T00:00:00.000+0800".to_string(),
+                            timestartgather: "2025-11-24T00:00:00.000+0800".to_string(),
+                            timeendgather: "2025-11-24T00:00:00.000+0800".to_string(),
+                            additionalcheck: "".to_string(),
+                            body: vec![ResponseHistoryMeasure {
+                                name: "".to_string(),
+                                val: "26.6".to_string(),
+                            }]
+                        },
+                        ResponseHistoryData {
+                            timestamp: "2025-11-25T00:00:00.000+0800".to_string(),
+                            timestartgather: "2025-11-25T00:00:00.000+0800".to_string(),
+                            timeendgather: "2025-11-25T00:00:00.000+0800".to_string(),
+                            additionalcheck: "".to_string(),
+                            body: vec![ResponseHistoryMeasure {
+                                name: "".to_string(),
+                                val: "25.5".to_string(),
+                            }],
+                        },
+                        ResponseHistoryData {
+                            timestamp: "2025-11-26T00:00:00.000+0800".to_string(),
+                            timestartgather: "2025-11-26T00:00:00.000+0800".to_string(),
+                            timeendgather: "2025-11-26T00:00:00.000+0800".to_string(),
+                            additionalcheck: "".to_string(),
+                            body: vec![ResponseHistoryMeasure {
+                                name: "".to_string(),
+                                val: "26.6".to_string(),
+                            }]
+                        },
+                    ]
+                },
+            ],
+        }).unwrap();
+        let _ = client_publish(&client, &tp, &body).await;
+
+
+        
     }
 }

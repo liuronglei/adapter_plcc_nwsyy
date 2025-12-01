@@ -63,13 +63,16 @@ pub const LOG_HIS_FILE_NUM: &str = "logHisFileNum";
 
 pub const DATABASE_URL: &str = "databaseUrl";
 
+pub const METER_SUM_NO: &str = "meterSumNo";
+pub const METER_DIR: &str = "meterFileDir";
 
-const CONFIG_ARGS: [&str; 41] = [CONF_PATH, BEE_ID, MQTT_SERVER, MQTT_AUTH, HTTP_SERVER_PORT,
+
+const CONFIG_ARGS: [&str; 43] = [CONF_PATH, BEE_ID, MQTT_SERVER, MQTT_AUTH, HTTP_SERVER_PORT,
     MQTT_CLIENT_BUF_SIZE, MQTT_MV_LIMIT, SOCKET_BUF_SIZE_NORTH, SOCKET_BUF_SIZE_SOUTH, EXE_ROOT_DIR,
     POINT_FILE_DIR, TRANSPORT_DIR, JSON_DIR, RESULT_DIR, AOE_DIR, WEB_DIR, DB_DIR, LOG_DIR,
     APP_NAME, APP_MODEL, MQTT_PACKAGE_MAX_SIZE, IS_LOCAL_FRONTEND, IS_DB, IS_HIS_DB, IS_FAKE_DELETE,
     DB_DIR_SIZE_LIMIT, IS_LOCAL_MQTT, LOCAL_MQTT_PORT, LOG_LEVEL, LOG_SAVE_TIME, LOG_SAVE_SIZE,
-    LOG_HIS_FILE_NUM, MQTT_TIMEOUT, DATABASE_URL, PLCC_SERVER,
+    LOG_HIS_FILE_NUM, MQTT_TIMEOUT, DATABASE_URL, PLCC_SERVER, METER_SUM_NO, METER_DIR,
     PLCC_USER, PLCC_PWD, EIG_HOME, IS_USE_SSL, SSL_CERT_FILE_PATH, SSL_KEY_FILE_PATH];
 
 pub const PING_GET: u8 = 1;
@@ -337,6 +340,15 @@ impl Env {
 
     pub fn get_plcc_pwd(&self) -> String {
         self.properties.get(PLCC_PWD).unwrap_or(&String::new()).clone()
+    }
+
+    pub fn get_meter_sum_no(&self) -> String {
+        self.properties.get(METER_SUM_NO).unwrap_or(&String::new()).clone()
+    }
+
+    pub fn get_meter_dir(&self) -> String {
+        let path = self.properties.get(METER_DIR).unwrap().to_owned();
+        self.transform_path_to_absolute(path.as_str())
     }
 
     pub fn get_default_properties() -> HashMap<String, String> {
