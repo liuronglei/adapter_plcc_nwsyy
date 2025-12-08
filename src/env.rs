@@ -13,12 +13,16 @@ pub const CONF_PATH: &str = "configFilePath";
 pub const PLCC_SERVER: &str = "plccServer";
 pub const PLCC_USER: &str = "plccUser";
 pub const PLCC_PWD: &str = "plccPwd";
+pub const MEMS_SERVER: &str = "memsServer";
+pub const MEMS_USER: &str = "memsUser";
+pub const MEMS_PWD: &str = "memsPwd";
 pub const MQTT_SERVER: &str = "mqttServer";
 pub const HTTP_SERVER_PORT: &str = "httpServerPort";
 pub const MQTT_TIMEOUT: &str = "mqttTimeout";
 pub const POINT_FILE_DIR: &str = "pointFileDir";
 pub const TRANSPORT_DIR: &str = "transportFileDir";
 pub const AOE_DIR: &str = "aoeFileDir";
+pub const DFF_DIR: &str = "dffFileDir";
 pub const JSON_DIR: &str = "jsonFileDir";
 pub const RESULT_DIR: &str = "resultFileDir";
 pub const APP_NAME: &str = "appName";
@@ -67,13 +71,14 @@ pub const METER_SUM_NO: &str = "meterSumNo";
 pub const METER_DIR: &str = "meterFileDir";
 
 
-const CONFIG_ARGS: [&str; 43] = [CONF_PATH, BEE_ID, MQTT_SERVER, MQTT_AUTH, HTTP_SERVER_PORT,
+const CONFIG_ARGS: [&str; 47] = [CONF_PATH, BEE_ID, MQTT_SERVER, MQTT_AUTH, HTTP_SERVER_PORT,
     MQTT_CLIENT_BUF_SIZE, MQTT_MV_LIMIT, SOCKET_BUF_SIZE_NORTH, SOCKET_BUF_SIZE_SOUTH, EXE_ROOT_DIR,
     POINT_FILE_DIR, TRANSPORT_DIR, JSON_DIR, RESULT_DIR, AOE_DIR, WEB_DIR, DB_DIR, LOG_DIR,
     APP_NAME, APP_MODEL, MQTT_PACKAGE_MAX_SIZE, IS_LOCAL_FRONTEND, IS_DB, IS_HIS_DB, IS_FAKE_DELETE,
     DB_DIR_SIZE_LIMIT, IS_LOCAL_MQTT, LOCAL_MQTT_PORT, LOG_LEVEL, LOG_SAVE_TIME, LOG_SAVE_SIZE,
-    LOG_HIS_FILE_NUM, MQTT_TIMEOUT, DATABASE_URL, PLCC_SERVER, METER_SUM_NO, METER_DIR,
-    PLCC_USER, PLCC_PWD, EIG_HOME, IS_USE_SSL, SSL_CERT_FILE_PATH, SSL_KEY_FILE_PATH];
+    LOG_HIS_FILE_NUM, MQTT_TIMEOUT, DATABASE_URL, PLCC_SERVER, METER_SUM_NO, METER_DIR, DFF_DIR,
+    PLCC_USER, PLCC_PWD, EIG_HOME, IS_USE_SSL, SSL_CERT_FILE_PATH, SSL_KEY_FILE_PATH,
+    MEMS_SERVER, MEMS_USER, MEMS_PWD];
 
 pub const PING_GET: u8 = 1;
 pub const CONFIG_GET: u8 = 2;
@@ -342,6 +347,18 @@ impl Env {
         self.properties.get(PLCC_PWD).unwrap_or(&String::new()).clone()
     }
 
+    pub fn get_mems_server(&self) -> String {
+        self.properties.get(MEMS_SERVER).unwrap_or(&String::new()).clone()
+    }
+
+    pub fn get_mems_user(&self) -> String {
+        self.properties.get(MEMS_USER).unwrap_or(&String::new()).clone()
+    }
+
+    pub fn get_mems_pwd(&self) -> String {
+        self.properties.get(MEMS_PWD).unwrap_or(&String::new()).clone()
+    }
+
     pub fn get_meter_sum_no(&self) -> String {
         self.properties.get(METER_SUM_NO).unwrap_or(&String::new()).clone()
     }
@@ -349,6 +366,13 @@ impl Env {
     pub fn get_meter_dir(&self) -> String {
         let path = self.properties.get(METER_DIR).unwrap().to_owned();
         self.transform_path_to_absolute(path.as_str())
+    }
+
+    pub fn get_dff_dir(&self) -> String {
+        if let Some(s) = self.get_property(DFF_DIR) {
+            return s.to_string();
+        }
+        String::new()
     }
 
     pub fn get_default_properties() -> HashMap<String, String> {

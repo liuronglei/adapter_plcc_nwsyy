@@ -10,10 +10,11 @@ use serde::{Deserialize, Serialize};
 use crate::db::mydb;
 use crate::model::datacenter::QueryDevResponseBody;
 use crate::{AdapterErr, ErrCode, ADAPTER_NAME};
-use crate::model::north::{MyAoe, MyAoes, MyMeasurement, MyPoints, MyTransport, MyTransports, PointParam};
-use crate::model::{points_to_south, transports_to_south, aoes_to_south,};
-use crate::utils::plccapi::{update_points, update_transports, update_aoes, do_reset};
-use crate::utils::mqttclient::{do_query_dev, do_data_query, do_register_sync, build_dev_mapping};
+use crate::model::north::{MyAoe, MyAoes, MyDffModel, MyDffModels, MyMeasurement, MyPoints, MyTransport, MyTransports, PointParam};
+use crate::model::{points_to_south, transports_to_south, aoes_to_south, dffs_to_south};
+use crate::utils::plccapi::{do_reset, update_aoes, update_points, update_transports};
+use crate::utils::memsapi::{update_dffs, do_reset_dff};
+use crate::utils::plccmqtt::{do_query_dev, do_data_query, do_register_sync, build_dev_mapping};
 use crate::db::dbutils::*;
 use crate::utils::{param_point_map, point_param_map, register_result};
 use crate::env::Env;
@@ -21,6 +22,7 @@ use crate::env::Env;
 const POINT_TREE: &str = "point";
 const AOE_TREE: &str = "aoe";
 const DEV_TREE: &str = "dev";
+const DFF_TREE: &str = "dff";
 
 pub const OPERATION_RECEIVE_BUFF_NUM: usize = 100;
 
@@ -30,12 +32,21 @@ pub enum ParserOperation {
     GetPointMapping(Sender<HashMap<String, u64>>),
     GetDevMapping(Sender<Vec<QueryDevResponseBody>>),
     GetAoeMapping(Sender<HashMap<u64, u64>>),
+    GetDffMapping(Sender<HashMap<u64, u64>>),
+    UpdateDff(Sender<u16>),
+    RecoverDff(Sender<u16>),
     // 退出数据库服务
     Quit,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 pub struct AoeMapping {
+    pub sid: u64,
+    pub nid: u64,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct DffMapping {
     pub sid: u64,
     pub nid: u64,
 }
@@ -59,7 +70,7 @@ impl ParserManager {
         let mut opts = rocksdb::Options::default();
         opts.create_if_missing(true);
         opts.create_missing_column_families(true);
-        let cfs = [POINT_TREE, DEV_TREE, AOE_TREE];
+        let cfs = [POINT_TREE, DEV_TREE, AOE_TREE, DFF_TREE];
         if let Ok(inner_db) = DB::open_cf(&opts, file_path, cfs) {
             Some(ParserManager { inner_db })
         } else {
@@ -76,6 +87,7 @@ impl ParserManager {
         let point_dir = env.get_point_dir();
         let transport_dir = env.get_transport_dir();
         let aoe_dir = env.get_aoe_dir();
+        let dff_dir = env.get_dff_dir();
         match op {
             ParserOperation::UpdateJson(sender) => {
                 let (mut result_code, mut has_err, temp_prefix) = (ErrCode::Success, false, "temp_");
@@ -143,6 +155,45 @@ impl ParserManager {
             ParserOperation::GetDevMapping(sender) => {
                 if let Err(e) = sender.send(self.query_dev_mapping()).await {
                     warn!("!!Failed to send get dev_mapping : {e:?}");
+                }
+            }
+            ParserOperation::UpdateDff(sender) => {
+                let (mut result_code, mut has_err, temp_prefix) = (ErrCode::Success, false, "temp_");
+                let temp_dff_dir = format!("{temp_prefix}{dff_dir}");
+                match self.join_dffs_json(&json_dir, &result_dir, &dff_dir, &temp_dff_dir).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        result_code = e.code;
+                        has_err = true;
+                    }
+                }
+                if !has_err {
+                    result_code = self.start_dff_parser(&json_dir, &temp_dff_dir).await;
+                    match result_code {
+                        ErrCode::Success => {
+                            if let Err(_) = self.write_into_result_dff(
+                                &json_dir, &dff_dir, 
+                                &result_dir, &temp_dff_dir,
+                            ) {
+                                result_code = ErrCode::IoErr;
+                            }
+                        },
+                        _ => {}
+                    }
+                }
+                if let Err(e) = sender.send(result_code as u16).await {
+                    warn!("!!Failed to send update dff : {e:?}");
+                }
+            }
+            ParserOperation::RecoverDff(sender) => {
+                let result_code = self.start_dff_parser(&result_dir, &dff_dir).await;
+                if let Err(e) = sender.send(result_code as u16).await {
+                    warn!("!!Failed to send recover dff : {e:?}");
+                }
+            }
+            ParserOperation::GetDffMapping(sender) => {
+                if let Err(e) = sender.send(self.query_dff_mapping()).await {
+                    warn!("!!Failed to send get dff_mapping : {e:?}");
                 }
             }
             ParserOperation::Quit => {}
@@ -404,6 +455,91 @@ impl ParserManager {
         }
     }
 
+    async fn join_dffs_json(&self, parser_path: &str, result_path: &str, dff_dir: &str, temp_dff_dir: &str) -> Result<(), AdapterErr> {
+        let file_name_dffs = format!("{parser_path}/{dff_dir}");
+        let result_name_dffs = format!("{result_path}/{dff_dir}");
+        let temp_name_dffs = format!("{parser_path}/{temp_dff_dir}");
+        if let Ok(file) = File::open(&file_name_dffs) {
+            let reader = BufReader::new(file);
+            match serde_json::from_reader::<_, MyDffModels>(reader) {
+                Ok(dffs) => {
+                    let mut old_dffs = if let Ok(file) = File::open(&result_name_dffs) {
+                        let reader = BufReader::new(file);
+                        match serde_json::from_reader::<_, MyDffModels>(reader) {
+                            Ok(dffs) => {
+                                dffs
+                            },
+                            Err(err) => {
+                                let msg = format!("报表JSON反序列化失败：{err}");
+                                log::error!("{}", msg);
+                                return Err(AdapterErr {
+                                    code: ErrCode::DffJsonDeserializeErr,
+                                    msg,
+                                });
+                            }
+                        }
+                    } else {
+                        MyDffModels {
+                            dffs: None,
+                            add: None,
+                            edit: None,
+                            delete: None,
+                        }
+                    };
+                    if dffs.dffs.is_some() {
+                        old_dffs.dffs = dffs.dffs;
+                    } else {
+                        if let Some(add) = dffs.add {
+                            old_dffs.dffs = if let Some(old_add) = old_dffs.dffs {
+                                Some(old_add.iter().chain(add.iter()).cloned().collect::<Vec<MyDffModel>>())
+                            } else {
+                                Some(add)
+                            };
+                        }
+                        if let Some(edit) = dffs.edit {
+                            if let Some(ref mut dffs) = old_dffs.dffs {
+                                let edit_map = edit.into_iter()
+                                    .map(|m| (m.id, m))
+                                    .collect::<HashMap<u64, MyDffModel>>();
+                                for dff in dffs.iter_mut() {
+                                    if let Some(updated) = edit_map.get(&dff.id) {
+                                        *dff = updated.clone();
+                                    }
+                                }
+                            } else {
+                                old_dffs.dffs = Some(edit);
+                            }
+                        }
+                        if let Some(delete) = dffs.delete {
+                            let remove_set = delete.into_iter().collect::<HashSet<u64>>();
+                            if let Some(ref mut dffs) = old_dffs.dffs {
+                                dffs.retain(|m| !remove_set.contains(&m.id));
+                            }
+                        }
+                    }
+                    let mut dffs_file = File::create(&temp_name_dffs).unwrap();
+                    dffs_file.write_all(serde_json::to_string(&old_dffs).unwrap().as_bytes()).unwrap();
+                    Ok(())
+                },
+                Err(err) => {
+                    let msg = format!("报表JSON反序列化失败：{err}");
+                    log::error!("{}", msg);
+                    Err(AdapterErr {
+                        code: ErrCode::DffJsonDeserializeErr,
+                        msg,
+                    })
+                }
+            }
+        } else {
+            let msg = "报表JSON文件不存在".to_string();
+            log::error!("{}", msg);
+            Err(AdapterErr {
+                code: ErrCode::PointJsonNotFound,
+                msg,
+            })
+        }
+    }
+
     fn write_into_result(
         &self, 
         parser_path: &str, point_dir: &str, transport_dir: &str, aoe_dir: &str,
@@ -421,6 +557,18 @@ impl ParserManager {
         write(result_name_transports, content)?;
         let content = read_to_string(temp_name_aoes)?;
         write(result_name_aoes, content)?;
+        Ok(())
+    }
+
+    fn write_into_result_dff(
+        &self, 
+        parser_path: &str, dff_dir: &str,
+        result_path: &str, temp_dff_dir: &str,
+    ) -> io::Result<()> {
+        let result_name_dffs = format!("{result_path}/{dff_dir}");
+        let temp_name_dffs = format!("{parser_path}/{temp_dff_dir}");
+        let content = read_to_string(temp_name_dffs)?;
+        write(result_name_dffs, content)?;
         Ok(())
     }
 
@@ -665,7 +813,7 @@ impl ParserManager {
         let aoes = self.query_aoe_mapping();
         self.delete_aoe_mapping(&aoes)
     }
-
+ 
     fn delete_aoe_mapping(&self, aoes: &HashMap<u64, u64>) -> bool {
         let keys = aoes.keys().map(|k| {
             k.to_string().as_bytes().to_vec()
@@ -699,6 +847,104 @@ impl ParserManager {
             my_id.as_bytes().to_vec()
         }).collect::<Vec<Vec<u8>>>();
         delete_items_by_keys_with_tree_name(&self.inner_db, DEV_TREE, keys)
+    }
+
+    async fn start_dff_parser(&self, path: &str, dff_dir: &str) -> ErrCode {
+        let file_name_dffs = format!("{path}/{dff_dir}");
+        let point_mapping = self.query_point_mapping();
+        let old_dff_mapping = self.query_dff_mapping();
+        let current_id = 65535_u64;
+        let mut result_code = ErrCode::Success;
+        let mut has_err = false;
+        if !has_err {
+            log::info!("start parse dffs.json");
+            match self.parse_dffs(file_name_dffs, &point_mapping, current_id).await {
+                Ok(_) => {},
+                Err(err) => {
+                    log::error!("{}", err.msg);
+                    has_err = true;
+                    result_code = err.code;
+                }
+            }
+            log::info!("end parse point.json");
+        }
+        if !has_err {
+            log::info!("start do reset");
+            let new_dff_mapping = self.query_dff_mapping();
+            match do_reset_dff(&old_dff_mapping, &new_dff_mapping).await {
+                Ok(()) => {},
+                Err(err) => {
+                    log::error!("{}", err.msg);
+                    has_err = true;
+                    result_code = err.code;
+                }
+            }
+            log::info!("end do reset");
+        }
+        result_code
+    }
+
+    async fn parse_dffs(&self, path: String, points_mapping: &HashMap<String, u64>, current_id: u64) -> Result<(), AdapterErr> {
+        // 打开文件
+        if let Ok(file) = File::open(path) {
+            let reader = BufReader::new(file);
+            // 反序列化为对象
+            match serde_json::from_reader(reader) {
+                Ok(dffs) => {
+                    let (new_dffs, dffs_mapping) = dffs_to_south(dffs, &points_mapping, current_id)?;
+                    let _ = update_dffs(new_dffs).await?;
+                    let _ = self.delete_all_dff_mapping();
+                    self.save_dff_mapping(&dffs_mapping);
+                    Ok(())
+                },
+                Err(err) => Err(AdapterErr {
+                    code: ErrCode::DffJsonDeserializeErr,
+                    msg: format!("报表JSON反序列化失败：{err}"),
+                })
+            }
+        } else {
+            Err(AdapterErr {
+                code: ErrCode::DffJsonNotFound,
+                msg: "报表JSON文件不存在".to_string(),
+            })
+        }
+    }
+
+    fn query_dff_mapping(&self) -> HashMap<u64, u64> {
+        let dffs: Vec<DffMapping> = query_values_cbor_with_tree_name(&self.inner_db, DFF_TREE);
+        let mut map = HashMap::with_capacity(dffs.len());
+        for dff in dffs {
+            map.insert(dff.sid, dff.nid);
+        }
+        map
+    }
+
+    fn save_dff_mapping(&self, dffs_mapping: &HashMap<u64, u64>) {
+        let dffs = dffs_mapping.iter().map(|(k, v)|{
+            DffMapping {
+                sid: *k,
+                nid: *v,
+            }
+        }).collect::<Vec<DffMapping>>();
+        if save_items_cbor_to_db_with_tree_name(&self.inner_db, DFF_TREE, &dffs, |dff| {
+            dff.sid.to_string().as_bytes().to_vec()
+        }) {
+            info!("insert dff_mapping success");
+        } else {
+            warn!("!!Failed to insert dff_mapping");
+        }
+    }
+
+    fn delete_all_dff_mapping(&self) -> bool {
+        let dffs = self.query_dff_mapping();
+        self.delete_dff_mapping(&dffs)
+    }
+ 
+    fn delete_dff_mapping(&self, dffs: &HashMap<u64, u64>) -> bool {
+        let keys = dffs.keys().map(|k| {
+            k.to_string().as_bytes().to_vec()
+        }).collect::<Vec<Vec<u8>>>();
+        delete_items_by_keys_with_tree_name(&self.inner_db, DFF_TREE, keys)
     }
 
 }
@@ -795,13 +1041,55 @@ async fn get_aoe_mapping(
     HttpResponse::RequestTimeout().finish()
 }
 
+#[get("/api/v1/parser/update_dff")]
+async fn update_dff(
+    sender: web::Data<Sender<ParserOperation>>,
+) -> HttpResponse {
+    let (tx, rx) = bounded(1);
+    if let Ok(()) = sender.send(ParserOperation::UpdateDff(tx)).await {
+        if let Ok(r) = rx.recv().await {
+            return HttpResponse::Ok().content_type("application/json").json(r);
+        }
+    }
+    HttpResponse::RequestTimeout().finish()
+}
+
+#[get("/api/v1/parser/recover_dff")]
+async fn recover_dff(
+    sender: web::Data<Sender<ParserOperation>>,
+) -> HttpResponse {
+    let (tx, rx) = bounded(1);
+    if let Ok(()) = sender.send(ParserOperation::RecoverDff(tx)).await {
+        if let Ok(r) = rx.recv().await {
+            return HttpResponse::Ok().content_type("application/json").json(r);
+        }
+    }
+    HttpResponse::RequestTimeout().finish()
+}
+
+#[get("/api/v1/parser/dff_mapping")]
+async fn get_dff_mapping(
+    sender: web::Data<Sender<ParserOperation>>,
+) -> HttpResponse {
+    let (tx, rx) = bounded(1);
+    if let Ok(()) = sender.send(ParserOperation::GetDffMapping(tx)).await {
+        if let Ok(r) = rx.recv().await {
+            return HttpResponse::Ok().content_type("application/json").json(r);
+        }
+    }
+    HttpResponse::RequestTimeout().finish()
+}
+
 pub fn config_parser_web_service(cfg: &mut web::ServiceConfig) {
     // 开放控制接口
     cfg.service(update_json)
     .service(recover_json)
     .service(get_point_mapping)
     .service(get_dev_mapping)
-    .service(get_aoe_mapping);
+    .service(get_aoe_mapping)
+    .service(update_dff)
+    .service(recover_dff)
+    .service(get_dff_mapping);
 }
 
 async fn query_dev(transports: &MyTransports) -> Result<Vec<QueryDevResponseBody>, AdapterErr> {

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 pub mod tokenizer;
 pub mod shuntingyard;
 pub mod plccapi;
+pub mod memsapi;
 pub mod localapi;
 pub mod exprparser;
 pub mod expr;
@@ -11,7 +12,11 @@ pub mod point_param_map;
 pub mod param_point_map;
 pub mod register_result;
 pub mod meter_data;
+pub mod parse;
 pub mod log_init;
+pub mod jsonmodel;
+pub mod memsmqtt;
+pub mod plccmqtt;
 
 use regex::Regex;
 

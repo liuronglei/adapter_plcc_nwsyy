@@ -6,8 +6,10 @@ use actix_web::middleware::Compress;
 use actix_web::web::Data;
 use crate::ADAPTER_NAME;
 use crate::parser::{start_parser_service, config_parser_web_service};
-use crate::utils::mqttclient::{do_register, do_data_query, do_keep_alive, do_cloud_event, do_meter_data_query};
+use crate::utils::plccmqtt::{do_register, do_data_query, do_keep_alive, do_cloud_event};
+use crate::utils::memsmqtt::do_meter_data_query;
 use crate::utils::plccapi::aoe_result_upload;
+use crate::utils::memsapi::dff_result_upload;
 use crate::utils::log_init::write_log_config;
 use crate::env::Env;
 
@@ -57,6 +59,14 @@ pub async fn run_adapter() -> std::io::Result<()> {
         },
     }
     log::info!("end do aoe_result_upload mqtt");
+    log::info!("start do dff_result_upload mqtt");
+    match dff_result_upload().await {
+        Ok(_) => {},
+        Err(err) => {
+            log::error!("do dff_result_upload error: {}", err.msg);
+        },
+    }
+    log::info!("end do dff_result_upload mqtt");
     log::info!("start do keep_alive mqtt");
     match do_keep_alive().await {
         Ok(_) => {},

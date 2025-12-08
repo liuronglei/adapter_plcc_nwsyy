@@ -87,3 +87,31 @@ pub async fn query_point_mapping() -> Result<HashMap<String, u64>, AdapterErr> {
         }
     }
 }
+
+pub async fn query_dff_mapping() -> Result<HashMap<u64, u64>, AdapterErr> {
+    let env = Env::get_env(ADAPTER_NAME);
+    let http_server_port = env.get_http_server_port();
+    let url = format!("http://localhost:{http_server_port}/api/v1/parser/dff_mapping");
+    let client = Client::new();
+    match client
+        .get(&url)
+        .send().await {
+        Ok(response) => {
+            if let Ok(dffs_mapping) = response.json::<HashMap<u64, u64>>().await {
+                Ok(dffs_mapping)
+            } else {
+                Err(AdapterErr {
+                    code: ErrCode::InternalErr,
+                    msg: "调用DFF映射API获取DFF映射失败".to_string(),
+                })
+            }
+        },
+        Err(ee) => {
+            log::error!("link to local api error: {:?}", ee);
+            Err(AdapterErr {
+                code: ErrCode::InternalErr,
+                msg: "连接本地API失败：".to_string(),
+            })
+        }
+    }
+}

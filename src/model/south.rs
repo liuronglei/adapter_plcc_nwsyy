@@ -2,14 +2,18 @@ use std::collections::HashMap;
 use std::time::Duration;
 use std::fmt;
 use std::fmt::{Display as FmtDisplay, Formatter};
+use std::rc::Rc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use derive_more::with_trait::{Display, FromStr};
 use log::{trace, warn};
-use crate::utils::exprparser::*;
 use Token::*;
 use Operation::*;
+use petgraph::prelude::*;
+use polars_core::frame::DataFrame;
+
+use crate::utils::exprparser::*;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Default)]
 pub struct MqttTransport {
@@ -545,61 +549,108 @@ pub enum Token {
     Tensor(Option<usize>),
     /// A variable.
     Var(String),
+    // 字符串, 用
+    Str(String),
     /// A function with name and number of arguments.
     Func(String, Option<usize>),
 }
 
+/**
+ * @api {枚举_数学符号} /Operation Operation
+ * @apiPrivate
+ * @apiGroup A_Enum
+ * @apiSuccess {String} Plus \+
+ * @apiSuccess {String} Minus \-
+ * @apiSuccess {String} Times \*
+ * @apiSuccess {String} Div /
+ * @apiSuccess {String} Rem %
+ * @apiSuccess {String} Pow ^
+ * @apiSuccess {String} Fact !
+ * @apiSuccess {String} Equal \==，从这里开始往下是bool操作符
+ * @apiSuccess {String} Unequal !=
+ * @apiSuccess {String} LessThan \<
+ * @apiSuccess {String} GreatThan \>
+ * @apiSuccess {String} LtOrEqual \<=
+ * @apiSuccess {String} GtOrEqual \>=
+ * @apiSuccess {String} And &&
+ * @apiSuccess {String} Or ||
+ * @apiSuccess {String} Not ~~
+ * @apiSuccess {String} BitAnd &，从这里开始往下是位操作
+ * @apiSuccess {String} BitOr |
+ * @apiSuccess {String} BitXor ^^
+ * @apiSuccess {String} BitShl \<<
+ * @apiSuccess {String} BitShr \>>
+ * @apiSuccess {String} BitAt @
+ * @apiSuccess {String} BitNot ~
+ * @apiSuccess {String} DotTimes .*
+ * @apiSuccess {String} DotDiv ./
+ * @apiSuccess {String} RightDiv \
+ * @apiSuccess {String} DotPow .^
+ * @apiSuccess {String} Transpose '
+ */
+/// Mathematical operations.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
 pub enum Operation {
     // +
-    Plus,
+    Plus, //加
     // -
-    Minus,
+    Minus, //减
     // *
-    Times,
+    Times, //乘
     // /
-    Div,
+    Div, //除
     // %
-    Rem,
+    Rem, //取余
     // ^
-    Pow,
+    Pow, //幂运算
     // !
-    Fact,
+    Fact, //阶乘运算
 
     // bool操作符
     // ==
-    Equal,
+    Equal, //等于
     // !=
-    Unequal,
+    Unequal, //不等于
     // <
-    LessThan,
+    LessThan, //小于
     // >
-    GreatThan,
+    GreatThan, //大于
     // <=
-    LtOrEqual,
+    LtOrEqual, //小于等于
     // >=
-    GtOrEqual,
+    GtOrEqual, //大于等于
     // &&
-    And,
+    And, //逻辑与
     // ||
-    Or,
+    Or, //逻辑或
     // ~~
-    Not,
+    Not, //逻辑非
     // 下面是位操作
     // &
-    BitAnd,
+    BitAnd, //位与
     // |
-    BitOr,
+    BitOr, //位或
     // ^^
-    BitXor,
+    BitXor, //位异或
     // <<
-    BitShl,
+    BitShl, //位左移
     // >>
-    BitShr,
+    BitShr, //位右移
     // @
-    BitAt,
+    BitAt, //位取值
     // ~
-    BitNot,
+    BitNot,//位取反
+    // 下面是tensor操作
+    // .*
+    DotTimes, //点乘
+    // ./
+    DotDiv, //点除
+    // \
+    LeftDiv, //左除
+    // .^
+    DotPow, //点次幂
+    // ’
+    Transpose, //转置
 }
 
 // extern crate meval;
@@ -1431,3 +1482,456 @@ pub enum AoeAction {
 pub struct AoeControl {
     pub AoeActions: Vec<AoeAction>,
 }
+
+/*****************报表相关-开始*****************/
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct DffModel {
+    /// dff id
+    pub id: u64,
+    /// should schedule
+    pub is_on: bool,
+    /// dff name
+    pub name: String,
+    /// Dataframe flow 启动的方式
+    pub trigger_type: DfTriggerType,
+    /// 节点
+    pub nodes: Vec<DfNode>,
+    /// 边
+    pub actions: Vec<DfActionEdge>,
+    /// Data frame save mode
+    pub save_mode: DfSaveMode,
+    /// destination of aoe variable
+    pub aoe_var: Option<(u64, String)>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DffResult {
+    pub flow_id: u64,
+    pub start_time: u64,
+    pub end_time: u64,
+    pub result: DataFrame,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub enum DfTriggerType {
+    // 简单固定周期触发
+    SimpleRepeat(Duration),
+    // cron expression
+    TimeDrive(String),
+    // 事件驱动
+    EventDrive(Expr),
+    // Data source驱动
+    DataSource,
+    // manual
+    Manual,
+}
+
+impl Display for DfTriggerType {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+#[repr(u8)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Copy, Clone)]
+pub enum DfSaveMode {
+    EveryTime,
+    Once,
+    Memory,
+    Never,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct DfNode {
+    pub id: u64,
+    pub flow_id: u64,
+    pub name: String,
+    pub node_type: DfNodeType,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum DfNodeType {
+    /// query data source
+    Source(DfSource),
+    /// transformation
+    Transform(Expr),
+    /// tensor eval script
+    TensorEval(DiGraph<StmtNode, u32>, u8, Option<Vec<String>>),
+    /// sql execute
+    Sql(String),
+    /// linear equations
+    Solve(bool),
+    /// nonlinear equations
+    NLSolve,
+    /// mixed integer linear programming, objective function related DF name, constraint related DF name
+    MILP(String, String, bool),
+    /// nonlinear programming
+    NLP(String, String),
+    /// 脚本
+    Wasm(Vec<ModelType>, Vec<u8>),
+    /// end
+    None,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub enum ModelType {
+    Island,
+    Meas,
+    File(Vec<String>),
+    Outgoing(Vec<String>),
+}
+
+impl PartialEq for DfNodeType {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (DfNodeType::Source(v1), DfNodeType::Source(v2)) => v1.eq(v2),
+            (DfNodeType::Transform(v1), DfNodeType::Transform(v2)) => v1.eq(v2),
+            (
+                DfNodeType::TensorEval(v1_1, v1_2, v1_3),
+                DfNodeType::TensorEval(v2_1, v2_2, v2_3)) => {
+                let mut r = v1_2.eq(v2_2) && v1_3.eq(v2_3);
+                if r && v1_1.node_count() != v2_1.node_count() {
+                    for i in 0..v1_1.node_count() {
+                        if v1_1.node_weight(NodeIndex::new(i)) != v2_1.node_weight(NodeIndex::new(i)) {
+                            r = false;
+                            break;
+                        }
+                    }
+                }
+                r
+            }
+            (DfNodeType::Sql(v1), DfNodeType::Sql(v2)) => v1.eq(v2),
+            (DfNodeType::Solve(v1), DfNodeType::Solve(v2)) => v1.eq(v2),
+            (DfNodeType::NLSolve, DfNodeType::NLSolve) => true,
+            (
+                DfNodeType::MILP(v1_1, v1_2, v1_3),
+                DfNodeType::MILP(v2_1, v2_2, v2_3),
+            ) => v1_1.eq(v2_1) && v1_2.eq(v2_2) && v1_3.eq(v2_3) ,
+            (
+                DfNodeType::NLP(v1_1, v1_2),
+                DfNodeType::NLP(v2_1, v2_2),
+            ) => v1_1.eq(v2_1) && v1_2.eq(v2_2),
+            (
+                DfNodeType::Wasm(v1_1, v1_2),
+                DfNodeType::Wasm(v2_1, v2_2),
+            ) => v1_1.eq(v2_1) && v1_2.eq(v2_2),
+            (DfNodeType::None, DfNodeType::None) => true,
+            _ => false,
+        }
+    }
+
+    fn ne(&self, other: &Self) -> bool {
+        !self.eq(other)
+    }
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub enum StmtNode {
+    Root,
+    // elements
+    VarDec(VarDecStmt),
+    CallExpr(CallExprStmt),
+    Break(BreakStmt),
+    Continue(ContinueStmt),
+    Return(ReturnStmt),
+    // containers
+    Block(BlockNode),
+    If(IfNode),
+    Else,
+    For(ForNode),
+    While(WhileNode),
+    Loop(LoopNode),
+    Function(FnDecNode),
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
+pub struct Position {
+    pub line: i32,
+    pub column: i32,
+}
+
+impl Position {
+    pub fn new() -> Position {
+        Position { line: 0, column: 0 }
+    }
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
+pub struct SourceLoc {
+    pub start: Position,
+    pub end: Position,
+}
+
+impl SourceLoc {
+    pub fn new() -> Self {
+        SourceLoc {
+            start: Position::new(),
+            end: Position::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StringData {
+    pub loc: SourceLoc,
+    pub value: String,
+}
+
+impl StringData {
+    pub fn new(loc: SourceLoc, value: String) -> Self {
+        StringData { loc, value }
+    }
+}
+
+
+#[derive(Debug, Clone)]
+pub enum Literal {
+    String(String),
+    Float(MyF),
+    Complex(MyCx),
+}
+
+#[derive(Debug, Clone)]
+pub enum RsExpr {
+    Literal(Literal),
+    NumExpr(Expr),
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct VarDecStmt {
+    pub loc: SourceLoc,
+    pub id: String,
+    pub init: Expr,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct CallExprStmt {
+    pub loc: SourceLoc,
+    pub expr: Expr,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct BreakStmt {
+    pub loc: SourceLoc,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct ContinueStmt {
+    pub loc: SourceLoc,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct ReturnStmt {
+    pub loc: SourceLoc,
+    pub argument: Option<Expr>,
+}
+
+#[derive(Debug)]
+pub struct IfStmt {
+    pub loc: SourceLoc,
+    pub test: Expr,
+    pub body: Stmt,
+    pub alt: Option<Stmt>,
+}
+
+#[derive(Debug)]
+pub struct ForStmt {
+    pub loc: SourceLoc,
+    pub init: Option<VarDecStmt>,
+    pub test: Option<Expr>,
+    pub update: Option<Expr>,
+    pub body: Stmt,
+}
+
+#[derive(Debug)]
+pub struct ForInStmt {
+    pub loc: SourceLoc,
+    pub left: String,
+    pub start: Expr,
+    pub end: Expr,
+    pub exhausted: bool,
+    pub body: Stmt,
+}
+
+#[derive(Debug)]
+pub struct WhileStmt {
+    pub loc: SourceLoc,
+    pub test: Expr,
+    pub body: Stmt,
+}
+
+#[derive(Debug)]
+pub struct LoopStmt {
+    pub loc: SourceLoc,
+    pub body: Stmt,
+}
+
+#[derive(Debug)]
+pub struct BlockStmt {
+    pub loc: SourceLoc,
+    pub body: Vec<Stmt>,
+}
+
+#[derive(Debug)]
+pub struct FnDecStmt {
+    pub loc: SourceLoc,
+    pub id: String,
+    pub params: Vec<String>,
+    pub body: Stmt,
+}
+
+#[derive(Debug)]
+pub struct CallExpr {
+    pub callee: String,
+    pub arguments: Vec<RsExpr>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Stmt {
+    VarDec(Rc<VarDecStmt>),
+    CallExpr(Rc<CallExprStmt>),
+    Block(Rc<BlockStmt>),
+    If(Rc<IfStmt>),
+    For(Rc<ForStmt>),
+    ForIn(Rc<ForInStmt>),
+    While(Rc<WhileStmt>),
+    Loop(Rc<LoopStmt>),
+    Break(Rc<BreakStmt>),
+    Continue(Rc<ContinueStmt>),
+    Return(Rc<ReturnStmt>),
+    Function(Rc<FnDecStmt>),
+}
+
+#[derive(Debug)]
+pub struct Prog {
+    pub body: Vec<Stmt>,
+}
+
+pub fn hoist(prog: &Prog) -> Vec<Stmt> {
+    let mut not_fn = vec![];
+    let mut fns = vec![];
+    prog.body.iter().for_each(|stmt| {
+        match stmt {
+            Stmt::Function(_) => {
+                fns.push(stmt.clone());
+            }
+            _ => {
+                not_fn.push(stmt.clone());
+            }
+        }
+    });
+    fns.append(&mut not_fn);
+    fns
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct BlockNode {
+    pub loc: SourceLoc,
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct IfNode {
+    pub loc: SourceLoc,
+    pub test: Expr,
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct ForNode {
+    pub loc: SourceLoc,
+    pub init: Option<VarDecStmt>,
+    pub test: Option<Expr>,
+    pub update: Option<Expr>,
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct WhileNode {
+    pub loc: SourceLoc,
+    pub test: Expr,
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct LoopNode {
+    pub loc: SourceLoc,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct FnDecNode {
+    pub loc: SourceLoc,
+    pub id: String,
+    pub params: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub enum DfSource {
+    Data(DataFrame),
+    File(String),
+    Url(String),
+    Image(ImageDfFilter),
+    Sql(DfSqlType, String),
+    OtherFlow(u64),
+    Dev(String),
+    Points(String),
+    Meas(String, String),
+    Plan(String),
+    PointsEval(EvalType, Vec<Expr>),
+    MeasEval(String, EvalType, Vec<Expr>),
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct ImageDfFilter {
+    pub is_url: bool,
+    pub url_or_path: String,
+    pub color_type: String,
+    pub filter_type: String,
+    pub width: usize,
+    pub height: usize,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub enum DfSqlType {
+    MySql(String),
+    Sqlite(String),
+    Postgres(String),
+    Unknown(String),
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub enum EvalType {
+    Select,
+    Filter,
+    WithColumn,
+    WithColumns,
+    GroupBy,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct DfActionEdge {
+    pub flow_id: u64,
+    pub name: String,
+    pub desc: String,
+    pub source_node: u64,
+    pub target_node: u64,
+    pub action: DfAction,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub enum DfAction {
+    Kmeans,
+    RandomTree,
+    Eval(EvalType, Vec<Expr>),
+    Sql(String),
+    Onnx(Vec<u8>),
+    OnnxUrl(String),
+    Nnef(Vec<u8>),
+    NnefUrl(String),
+    WriteFile(String),
+    WriteSql(DfSqlType, String),
+    None,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum FlowOperation {
+    Start,
+    Stop,
+    StartFlow(u64),
+    StartFlows(Vec<u64>),
+    StopFlow(u64),
+    StopFlows(Vec<u64>),
+}
+/*****************报表相关-结束*****************/

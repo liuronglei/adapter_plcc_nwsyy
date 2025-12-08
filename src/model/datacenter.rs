@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 
-use crate::{model::north::{MyAoe, MyMeasurement, MyPbAoeResult, MyTransport}, ErrCode};
+use crate::{ErrCode, model::{north::{MyAoe, MyDffModel, MyDffResult, MyMeasurement, MyPbAoeResult, MyTransport}, south::DffResult}};
 
 pub trait HasToken {
     fn token(&self) -> String;
@@ -86,6 +86,12 @@ impl HasToken for KeepAliveResponse {
 }
 
 impl HasToken for CloudEventResponse {
+    fn token(&self) -> String {
+        self.token.clone()
+    }
+}
+
+impl HasToken for MemsEventResponse {
     fn token(&self) -> String {
         self.token.clone()
     }
@@ -348,6 +354,66 @@ pub struct AoeSetBody {
     pub extdata: Vec<MyPbAoeResult>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DffUpdate {
+    pub token: String,
+    pub time: String,
+    pub body: Vec<DffUpdateBody>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DffUpdateBody {
+    pub model: String,
+    pub dev: String,
+    pub event: String,
+    pub starttime: String,
+    pub endtime: String,
+    #[serde(rename = "HappenSrc")]
+    pub happen_src: String,
+    #[serde(rename = "IsNeedRpt")]
+    pub is_need_rpt: String,
+    pub extdata: Vec<MyDffResult>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DffSet {
+    pub token: String,
+    pub time: String,
+    #[serde(rename = "SourType")]
+    pub sour_type: String,
+    pub body: Vec<DffSetBody>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DffSetBody {
+    pub model: String,
+    pub dev: String,
+    pub event: String,
+    pub timestamp: String,
+    pub timestartgather: String,
+    pub timeendgather: String,
+    pub starttimestamp: String,
+    pub endtimestamp: String,
+    #[serde(rename = "HappenSrc")]
+    pub happen_src: String,
+    #[serde(rename = "IsNeedRpt")]
+    pub is_need_rpt: String,
+    pub occurnum: String,
+    #[serde(rename = "EventLevel")]
+    pub event_level: String,
+    #[serde(rename = "RptStatus")]
+    pub rpt_status: Vec<RptStatusItem>,
+    pub data: String,
+    pub extdata: Vec<MyDffResult>,
+}
+
+#[serde_as]
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct CloudEventDffStatus {
+    #[serde_as(as = "DisplayFromStr")]
+    pub dff_id: u64,
+    pub dff_status: u8,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RptStatusItem {
@@ -502,6 +568,60 @@ pub struct ResponseGuidBody {
     pub desc: String,
     pub guid: String,
     pub dev: String,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct MemsEventRequest {
+    pub token: String,
+    #[serde(rename = "requestId")]
+    pub request_id: String,
+    pub time: String,
+    #[serde(rename = "msgInfo")]
+    pub msg_info: String,
+    pub cmd: MemsEventCmd,
+    pub body: Option<MemsEventRequestBody>,
+}
+
+#[serde_as]
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct MemsEventRequestBody {
+    #[serde_as(as = "Option<Vec<DisplayFromStr>>")]
+    pub dffs_id: Option<Vec<u64>>,
+    pub dffs_status: Option<Vec<MemsEventDffStatus>>,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct MemsEventResponse {
+    pub token: String,
+    #[serde(rename = "requestId")]
+    pub request_id: String,
+    pub time: String,
+    #[serde(rename = "msgInfo")]
+    pub msg_info: String,
+    pub data: MemsEventResponseBody,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct MemsEventResponseBody {
+    pub dffs: Option<Vec<MyDffModel>>,
+    pub dffs_status: Option<Vec<MemsEventDffStatus>>,
+    pub code: ErrCode,
+    pub msg: String,
+}
+
+#[serde_as]
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct MemsEventDffStatus {
+    #[serde_as(as = "DisplayFromStr")]
+    pub dff_id: u64,
+    pub dff_status: u8,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub enum MemsEventCmd {
+    GetTgDFFConfig,
+    TgDFFControl,
+    GetTgDFFStatus
 }
 
 #[test]

@@ -43,6 +43,7 @@ tokio-cron-scheduler = "0.15"
 
 petgraph = { version = "0.8", features = ["serde-1"] }
 polars-core = { version = "0.52", default-features = false, features = ["serde", "diagonal_concat", "timezones", "dtype-u8", "dtype-u16", "dtype-i8", "dtype-i16"] }
+unic-ucd = "0.9"
 
 #eig-domain = { path = "../eig-rc/eig-domain", default-features = false, features = ["model"] }
 #eig-expr = { path = "../eig-rc/eig-expr", default-features = false, features = ["model"] }

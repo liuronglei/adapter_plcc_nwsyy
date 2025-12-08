@@ -17,6 +17,13 @@ pub const URL_RESET: &str = "api/v1/controls/reset";
 pub const URL_UNRUN_AOES: &str = "api/v1/unrun_aoes";
 pub const URL_RUNNING_AOES: &str = "api/v1/running_aoes";
 pub const URL_AOE_CONTROL: &str = "api/v1/controls/aoes";
+pub const URL_DFFS: &str = "api/v1/flows/models";
+pub const URL_DFF_RESULTS: &str = "api/v1/flows/results";
+pub const URL_RUNNING_DFFS: &str = "api/v1/flows/running";
+pub const URL_UNRUN_DFFS: &str = "api/v1/flows/unrun";
+pub const URL_DFF_CONTROL: &str = "api/v1/flows/controls";
+pub const URL_DFF_RESET: &str = "api/v1/pscpu/reset";
+pub const URL_DFF_START: &str = "api/v1/pscpu/start";
 pub const MODEL_FROZEN: &str = "DC_SDTTU_frozen";
 pub const MODEL_FROZEN_METER: &str = "DC_Meter_frozen";
 pub const MODEL_PORT_METER: &str = "PLC";
@@ -56,6 +63,12 @@ pub enum ErrCode {
     AoeIdNotFound = 636,
     PlccActionErr = 637,
     MqttTimeoutErr = 638,
+    MemsConnectErr = 639,
+    DffJsonNotFound = 640,
+    DffJsonDeserializeErr = 641,
+    DffVariableErr = 642,
+    DffIdNotFound = 643,
+    DffActionErr = 644,
     Other = 699,
 }
 

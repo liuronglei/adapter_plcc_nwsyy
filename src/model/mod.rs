@@ -4,6 +4,7 @@ use std::str::FromStr;
 use std::time::Duration;
 use std::vec;
 use serde_json::Value;
+use polars_core::frame::DataFrame;
 
 use north::MyPoints;
 use south::Measurement;
@@ -14,6 +15,7 @@ use crate::model::south::*;
 use crate::utils::{replace_point, replace_point_without_prefix, get_point_attr, get_point_tag};
 use crate::{AdapterErr, ErrCode, ADAPTER_NAME};
 use crate::env::Env;
+use crate::utils::parse::{load_prog, create_stmt_tree};
 
 pub mod north;
 pub mod south;
@@ -859,4 +861,215 @@ pub fn aoe_event_result_to_north(event_result: PbEventResult) -> Result<MyPbEven
         end_time: event_result.end_time,
         final_result: event_result.final_result,
     })
+}
+
+pub fn dffs_to_south(dffs: MyDffModels, points_mapping: &HashMap<String, u64>, current_id: u64) -> Result<(Vec<DffModel>, HashMap<u64, u64>), AdapterErr> {
+    let dffs = replace_point_for_dff(&dffs, points_mapping)?;
+    let mut dffs_result = vec![];
+    let mut dffs_mapping = HashMap::new();
+    let mut current_id = current_id;
+    if let Some(dffs) = dffs.dffs {
+        for d in dffs {
+            current_id = current_id + 1;
+            let trigger_type = dfftrigger_type_to_south(d.trigger_type)?;
+            let nodes = dffnodes_to_south(current_id, d.nodes)?;
+            let actions = dffactions_to_south(current_id, d.actions)?;
+            let dff = DffModel {
+                id: current_id,
+                name: d.name,
+                nodes,
+                actions,
+                trigger_type,
+                save_mode: d.save_mode,
+                is_on: d.is_on,
+                aoe_var: d.aoe_var,
+            };
+            dffs_result.push(dff);
+            dffs_mapping.insert(current_id, d.id);
+        }
+    }
+    Ok((dffs_result, dffs_mapping))
+}
+
+fn replace_point_for_dff(dffs: &MyDffModels, points_mapping: &HashMap<String, u64>) -> Result<MyDffModels, AdapterErr> {
+    let mut dffs = dffs.clone();
+    if let Some(dffs) = dffs.dffs.as_mut() {
+        for dff in dffs.iter_mut() {
+            for node in dff.nodes.iter_mut() {
+                if let MyDfNodeType::Source(MyDfSource::Points(points)) = &node.node_type {
+                    node.node_type = MyDfNodeType::Source(MyDfSource::Points(replace_point(points, points_mapping)?));
+                }
+            }
+        }
+    }
+    Ok(dffs)
+}
+
+fn dfftrigger_type_to_south(north: MyDfTriggerType) -> Result<DfTriggerType, AdapterErr> {
+    match north {
+        MyDfTriggerType::SimpleRepeat(v) => Ok(DfTriggerType::SimpleRepeat(Duration::from_millis(v))),
+        MyDfTriggerType::TimeDrive(v) => Ok(DfTriggerType::TimeDrive(v)),
+        MyDfTriggerType::EventDrive(v) => {
+            if let Ok(expr) = Expr::from_str(v.as_str()) {
+                Ok(DfTriggerType::EventDrive(expr))
+            } else {
+                Err(AdapterErr {
+                    code: ErrCode::DffVariableErr,
+                    msg: format!("报表事件驱动变量名解析错误：{v}"),
+                })
+            }
+        },
+        MyDfTriggerType::DataSource(_) => Ok(DfTriggerType::DataSource),
+        MyDfTriggerType::Manual(_) => Ok(DfTriggerType::Manual),
+    }
+}
+
+fn dffnodes_to_south(dff_id: u64, north: Vec<MyDfNode>) -> Result<Vec<DfNode>, AdapterErr> {
+    let mut nodes = vec![];
+    for node_n in north {
+        let node_type = match node_n.node_type {
+            MyDfNodeType::Source(v) => {
+                let source = match v {
+                    MyDfSource::Data(v) => {
+                        if let Ok(value) = serde_json::from_slice::<Value>(&v) {
+                            if let Ok(df) = serde_json::from_value::<DataFrame>(value) {
+                                DfSource::Data(df)
+                            } else {
+                                DfSource::Data(DataFrame::empty())
+                            }
+                        } else {
+                            DfSource::Data(DataFrame::empty())
+                        }
+                    },
+                    MyDfSource::File(v) => DfSource::File(v),
+                    MyDfSource::Url(v) => DfSource::Url(v),
+                    MyDfSource::Image(v) => DfSource::Image(v),
+                    MyDfSource::Sql(v1, v2) => DfSource::Sql(v1, v2),
+                    MyDfSource::OtherFlow(v) => DfSource::OtherFlow(v),
+                    MyDfSource::Dev(v) => DfSource::Dev(v),
+                    MyDfSource::Points(v) => DfSource::Points(v),
+                    MyDfSource::Meas(v1, v2) => DfSource::Meas(v1, v2),
+                    MyDfSource::Plan(v) => DfSource::Plan(v),
+                    MyDfSource::PointsEval(v1, v2) => {
+                        let mut exprs = vec![];
+                        for v in v2 {
+                            if let Ok(expr) = Expr::from_str(v.as_str()) {
+                                exprs.push(expr);
+                            } else {
+                                return Err(AdapterErr {
+                                    code: ErrCode::DffVariableErr,
+                                    msg: format!("报表PointsEval变量名解析错误：{v}"),
+                                });
+                            }
+                        }
+                        DfSource::PointsEval(v1, exprs)
+                    },
+                    MyDfSource::MeasEval(v1, v2, v3) => {
+                        let mut exprs = vec![];
+                        for v in v3 {
+                            if let Ok(expr) = Expr::from_str(v.as_str()) {
+                                exprs.push(expr);
+                            } else {
+                                return Err(AdapterErr {
+                                    code: ErrCode::DffVariableErr,
+                                    msg: format!("报表MeasEval变量名解析错误：{v}"),
+                                });
+                            }
+                        }
+                        DfSource::MeasEval(v1, v2, exprs)
+                    },
+                };
+                DfNodeType::Source(source)
+            },
+            MyDfNodeType::Transform(v) => {
+                if let Ok(expr) = Expr::from_str(v.as_str()) {
+                    DfNodeType::Transform(expr)
+                } else {
+                    return Err(AdapterErr {
+                        code: ErrCode::DffVariableErr,
+                        msg: format!("报表node变量名解析错误：{v}"),
+                    });
+                }
+            },
+            MyDfNodeType::TensorEval(_, _, _, v4) => {
+                if let Ok(prog) = load_prog(&v4) {
+                    let g = create_stmt_tree(&prog);
+                    DfNodeType::TensorEval(g, 0, None)
+                } else {
+                    return Err(AdapterErr {
+                        code: ErrCode::DffVariableErr,
+                        msg: format!("报表TensorEval变量名解析错误：{v4}"),
+                    });
+                }
+            },
+            MyDfNodeType::Sql(v) => DfNodeType::Sql(v),
+            MyDfNodeType::Solve(v) => DfNodeType::Solve(v),
+            MyDfNodeType::NLSolve(_) => DfNodeType::NLSolve,
+            MyDfNodeType::MILP(v1, v2, v3) => DfNodeType::MILP(v1, v2, v3),
+            MyDfNodeType::NLP(v1, v2) => DfNodeType::NLP(v1, v2),
+            MyDfNodeType::Wasm(v1, v2) => {
+                let mut model_types = vec![];
+                for v in v1 {
+                    model_types.push(match v {
+                        MyModelType::Island(_) => ModelType::Island,
+                        MyModelType::Meas(_) => ModelType::Meas,
+                        MyModelType::File(items) => ModelType::File(items),
+                        MyModelType::Outgoing(items) => ModelType::Outgoing(items),
+                    });
+                }
+                DfNodeType::Wasm(model_types, v2)
+            },
+            MyDfNodeType::None(_) => DfNodeType::None,
+        };
+        let node_s = DfNode {
+            id: node_n.id,
+            flow_id: dff_id,
+            name: node_n.name,
+            node_type: node_type,
+        };
+        nodes.push(node_s);
+    }
+    Ok(nodes)
+}
+
+fn dffactions_to_south(dff_id: u64, north: Vec<MyDfActionEdge>) -> Result<Vec<DfActionEdge>, AdapterErr> {
+    let mut actions = vec![];
+    for action_n in north {
+        let action = match action_n.action {
+            MyDfAction::Kmeans(_) => DfAction::Kmeans,
+            MyDfAction::RandomTree(_) => DfAction::RandomTree,
+            MyDfAction::Eval(v1, v2) => {
+                let mut exprs = vec![];
+                for v in v2 {
+                    if let Ok(expr) = Expr::from_str(v.as_str()) {
+                        exprs.push(expr);
+                    } else {
+                        return Err(AdapterErr {
+                            code: ErrCode::DffVariableErr,
+                            msg: format!("报表动作Eval变量名解析错误：{v}"),
+                        });
+                    }
+                }
+                DfAction::Eval(v1, exprs)
+            },
+            MyDfAction::Sql(v) => DfAction::Sql(v),
+            MyDfAction::Onnx(v) => DfAction::Onnx(v),
+            MyDfAction::OnnxUrl(v) => DfAction::OnnxUrl(v),
+            MyDfAction::Nnef(v) => DfAction::Nnef(v),
+            MyDfAction::NnefUrl(v) => DfAction::NnefUrl(v),
+            MyDfAction::WriteFile(v) => DfAction::WriteFile(v),
+            MyDfAction::WriteSql(v1, v2) => DfAction::WriteSql(v1, v2),
+            MyDfAction::None(_) => DfAction::None,
+        };
+        let action_s = DfActionEdge {
+            flow_id: dff_id,
+            name: action_n.name,
+            desc: action_n.desc,
+            source_node: action_n.source_node,
+            target_node: action_n.target_node,
+            action,
+        };
+        actions.push(action_s);
+    }
+    Ok(actions)
 }

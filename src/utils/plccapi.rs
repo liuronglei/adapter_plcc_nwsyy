@@ -10,12 +10,14 @@ use sha2::Sha256;
 use tokio::time::{interval, Duration};
 use crate::model::{aoe_event_result_to_north, aoe_action_result_to_north};
 use crate::model::datacenter::CloudEventAoeStatus;
-use crate::model::south::{AoeModel, Measurement, PbAoeResults, Transport, AoeControl, AoeAction};
+use crate::model::south::{AoeControl, AoeModel, Measurement, PbAoeResults, Transport};
 use crate::model::north::{MyPbAoeResult, MyPbEventResult, MyPbActionResult};
-use crate::utils::mqttclient::{get_mqttoptions, client_publish, generate_aoe_update, generate_aoe_set, query_register_dev};
+use crate::utils::mqttclient::{get_mqttoptions, client_publish};
+use crate::utils::plccmqtt::{generate_aoe_update, generate_aoe_set, query_register_dev};
 use crate::utils::{point_param_map, param_point_map};
 use crate::utils::localapi::{query_aoe_mapping, query_point_mapping};
-use crate::{ADAPTER_NAME, AdapterErr, ErrCode, MODEL_FROZEN, URL_AOE_CONTROL, URL_AOE_RESULTS, URL_AOES, URL_LOGIN, URL_POINTS, URL_RESET, URL_RUNNING_AOES, URL_TRANSPORTS, URL_UNRUN_AOES};
+use crate::{ADAPTER_NAME, AdapterErr, ErrCode, MODEL_FROZEN, URL_AOE_CONTROL, URL_AOE_RESULTS, URL_AOES, URL_LOGIN, URL_POINTS,
+    URL_RESET, URL_RUNNING_AOES, URL_TRANSPORTS, URL_UNRUN_AOES};
 use crate::env::Env;
 
 const PASSWORD_V_KEY: &[u8] = b"zju-plcc";
@@ -545,7 +547,7 @@ async fn query_aoe_result(token: String, ids: Vec<u64>) -> Result<PbAoeResults, 
             } else {
                 Err(AdapterErr {
                     code: ErrCode::PlccConnectErr,
-                    msg: "调用策略执行结果API获取测点失败".to_string(),
+                    msg: "调用API获取策略执行结果失败".to_string(),
                 })
             }
         },

@@ -3,7 +3,7 @@ use crate::utils::shuntingyard::Associativity::*;
 use crate::model::south::{RPNError, Token};
 
 #[derive(Debug, Clone, Copy)]
-enum Associativity {
+pub enum Associativity {
     Left,
     Right,
     NA,
@@ -25,17 +25,18 @@ fn prec_assoc(token: &Token) -> (u32, Associativity) {
             LessThan | GreatThan | LtOrEqual | GtOrEqual => (9, Left),
             BitShl | BitShr => (10, Left),
             Plus | Minus => (11, Left),
-            Times | Div | Rem => (12, Left),
+            Times | Div | LeftDiv | Rem | DotTimes | DotDiv => (12, Left),
             BitAt => (13, Left),
-            Pow => (14, Right),
+            Pow | DotPow  => (14, Right),
             _ => unimplemented!(),
-        },
+        }
         Unary(op) => match op {
             Plus | Minus | Not | BitNot => (13, NA),
             Fact => (15, NA),
+            Transpose =>  (16, NA),
             _ => unimplemented!(),
-        },
-        Var(_) | Number(_) | Func(..) | Tensor(_) | LParen | RParen | BigLParen | BigRParen
+        }
+        Var(_) | Str(_) | Number(_) | Func(..) | Tensor(_) | LParen | RParen | BigLParen | BigRParen
         | RBracket | Comma => (0, NA),
     }
 }

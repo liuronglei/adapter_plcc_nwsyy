@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use derive_more::Display;
+use polars_core::frame::DataFrame;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 
@@ -416,4 +417,153 @@ fn test_aoe_result_parse() {
         Ok(msg) => println!("from_str2: {:?}", msg),
         Err(e) => println!("err2: {:?}", e),
     }
+}
+
+/*****************报表相关*****************/
+#[serde_as]
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct MyDffModels {
+    pub dffs: Option<Vec<MyDffModel>>,
+    pub add: Option<Vec<MyDffModel>>,
+    pub edit: Option<Vec<MyDffModel>>,
+    #[serde_as(as = "Option<Vec<DisplayFromStr>>")]
+    pub delete: Option<Vec<u64>>,
+}
+
+#[serde_as]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct MyDffModel {
+    /// dff id
+    #[serde_as(as = "DisplayFromStr")]
+    pub id: u64,
+    /// should schedule
+    pub is_on: bool,
+    /// dff name
+    pub name: String,
+    /// Dataframe flow 启动的方式
+    pub trigger_type: MyDfTriggerType,
+    /// 节点
+    pub nodes: Vec<MyDfNode>,
+    /// 边
+    pub actions: Vec<MyDfActionEdge>,
+    /// Data frame save mode
+    pub save_mode: crate::model::south::DfSaveMode,
+    /// destination of aoe variable
+    #[serde_as(as = "Option<(DisplayFromStr, _)>")]
+    pub aoe_var: Option<(u64, String)>,
+}
+
+#[serde_as]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub enum MyDfTriggerType {
+    // 简单固定周期触发
+    SimpleRepeat(#[serde_as(as = "DisplayFromStr")] u64),
+    // cron expression
+    TimeDrive(String),
+    // 事件驱动
+    EventDrive(String),
+    // Data source驱动
+    DataSource(String),
+    // manual
+    Manual(String),
+}
+
+#[serde_as]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct MyDfNode {
+    #[serde_as(as = "DisplayFromStr")]
+    pub id: u64,
+    #[serde_as(as = "DisplayFromStr")]
+    pub flow_id: u64,
+    pub name: String,
+    pub node_type: MyDfNodeType,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub enum MyDfNodeType {
+    /// query data source
+    Source(MyDfSource),
+    /// transformation
+    Transform(String),
+    /// tensor eval script
+    TensorEval(bool, bool, bool, String),
+    /// sql execute
+    Sql(String),
+    /// linear equations
+    Solve(bool),
+    /// nonlinear equations
+    NLSolve(String),
+    /// mixed integer linear programming, objective function related DF name, constraint related DF name
+    MILP(String, String, bool),
+    /// nonlinear programming
+    NLP(String, String),
+    /// 脚本
+    Wasm(Vec<MyModelType>, Vec<u8>),
+    /// end
+    None(String),
+}
+
+#[serde_as]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub enum MyDfSource {
+    Data(Vec<u8>),
+    File(String),
+    Url(String),
+    Image(crate::model::south::ImageDfFilter),
+    Sql(crate::model::south::DfSqlType, String),
+    OtherFlow(#[serde_as(as = "DisplayFromStr")] u64),
+    Dev(String),
+    Points(String),
+    Meas(String, String),
+    Plan(String),
+    PointsEval(crate::model::south::EvalType, Vec<String>),
+    MeasEval(String, crate::model::south::EvalType, Vec<String>),
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub enum MyModelType {
+    Island(String),
+    Meas(String),
+    File(Vec<String>),
+    Outgoing(Vec<String>),
+}
+
+#[serde_as]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct MyDfActionEdge {
+    #[serde_as(as = "DisplayFromStr")]
+    pub flow_id: u64,
+    pub name: String,
+    pub desc: String,
+    #[serde_as(as = "DisplayFromStr")]
+    pub source_node: u64,
+    #[serde_as(as = "DisplayFromStr")]
+    pub target_node: u64,
+    pub action: MyDfAction,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub enum MyDfAction {
+    Kmeans(String),
+    RandomTree(String),
+    Eval(crate::model::south::EvalType, Vec<String>),
+    Sql(String),
+    Onnx(Vec<u8>),
+    OnnxUrl(String),
+    Nnef(Vec<u8>),
+    NnefUrl(String),
+    WriteFile(String),
+    WriteSql(crate::model::south::DfSqlType, String),
+    None(String),
+}
+
+#[serde_as]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Default, Debug)]
+pub struct MyDffResult {
+    pub flow_id: Option<String>,
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub start_time: Option<u64>,
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub end_time: Option<u64>,
+    pub result: DataFrame,
 }
