@@ -74,7 +74,7 @@ fn do_get_dff_config(mems_event: MemsEventRequest) -> MemsEventResponse {
                 dffs = my_dffs.dffs;
             },
             Err(e) => {
-                log::error!("{:?}", e);
+                log::error!("读取本地报表配置失败：{:?}", e);
             }
         }
     }

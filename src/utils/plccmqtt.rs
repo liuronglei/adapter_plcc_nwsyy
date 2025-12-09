@@ -363,7 +363,9 @@ fn do_get_plcc_config(cloud_event: CloudEventRequest) -> CloudEventResponse {
             Ok(my_points) => {
                 points = my_points.points;
             },
-            Err(_) => {}
+            Err(e) => {
+                log::error!("读取本地PLCC配置失败：{:?}", e);
+            }
         }
     }
     if let Ok(file) = File::open(file_name_transports) {
