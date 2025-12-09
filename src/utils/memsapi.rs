@@ -35,21 +35,30 @@ pub async fn update_dffs(dffs: Vec<DffModel>) -> Result<(), AdapterErr> {
     save_dffs(token, dffs).await
 }
 
-pub async fn do_reset_dff(old_dff_mapping: &HashMap<u64, u64>, new_dff_mapping: &HashMap<u64, u64>) -> Result<(), AdapterErr> {
-    // 记录重置前的dff状态
+pub async fn do_start_dff() -> Result<(), AdapterErr> {
     let token = login().await?;
-    let running_dffs = query_running_dffs(token.clone()).await?;
-    let new_dff_values = new_dff_mapping.values().copied().collect::<HashSet<u64>>();
-    let running_dffs = running_dffs
+    let dffs = query_dffs(token.clone()).await?;
+    let running_dffs = dffs.iter().map(|k| k.id).collect::<Vec<u64>>();
+    match start_all(token).await {
+        Ok(_) => {
+            actix_rt::time::sleep(std::time::Duration::from_millis(1000)).await;
+            do_dff_action(FlowOperation::StartFlows(running_dffs)).await
+        },
+        Err(e) => Err(e),
+    }
+}
+
+pub async fn do_reset_dff(unrun_dffs_north: Vec<u64>, dff_mapping: &HashMap<u64, u64>) -> Result<(), AdapterErr> {
+    let token = login().await?;
+    // 记录重置前的dff状态
+    let running_dffs = dff_mapping
         .iter()
-        .filter_map(|k| {
-            old_dff_mapping.get(k).and_then(|v| {
-                if new_dff_values.contains(v) {
-                    Some(*k)
-                } else {
-                    None
-                }
-            })
+        .filter_map(|(k, v)| {
+            if unrun_dffs_north.contains(v) {
+                None
+            } else {
+                Some(*k)
+            }
         }).collect::<Vec<u64>>();
     match reset(token.clone()).await {
         Ok(_) => {
@@ -435,6 +444,11 @@ pub async fn do_query_dff_status() -> Result<Vec<MemsEventDffStatus>, AdapterErr
     }
     dff_status.sort_by_key(|x| x.dff_id);
     Ok(dff_status)
+}
+
+pub async fn do_query_unrun_dffs() -> Result<Vec<u64>, AdapterErr> {
+    let token = login().await?;
+    query_unrun_dffs(token).await
 }
 
 async fn query_unrun_dffs(token: String) -> Result<Vec<u64>, AdapterErr> {

@@ -13,7 +13,7 @@ use crate::{AdapterErr, ErrCode, ADAPTER_NAME};
 use crate::model::north::{MyAoe, MyAoes, MyDffModel, MyDffModels, MyMeasurement, MyPoints, MyTransport, MyTransports, PointParam};
 use crate::model::{points_to_south, transports_to_south, aoes_to_south, dffs_to_south};
 use crate::utils::plccapi::{do_reset, update_aoes, update_points, update_transports};
-use crate::utils::memsapi::{update_dffs, do_reset_dff};
+use crate::utils::memsapi::{update_dffs, do_reset_dff, do_query_unrun_dffs, do_start_dff};
 use crate::utils::plccmqtt::{do_query_dev, do_data_query, do_register_sync, build_dev_mapping};
 use crate::db::dbutils::*;
 use crate::utils::{param_point_map, point_param_map, register_result};
@@ -35,6 +35,7 @@ pub enum ParserOperation {
     GetDffMapping(Sender<HashMap<u64, u64>>),
     UpdateDff(Sender<u16>),
     RecoverDff(Sender<u16>),
+    StartDff(Sender<u16>),
     // 退出数据库服务
     Quit,
 }
@@ -90,54 +91,52 @@ impl ParserManager {
         let dff_dir = env.get_dff_dir();
         match op {
             ParserOperation::UpdateJson(sender) => {
-                let (mut result_code, mut has_err, temp_prefix) = (ErrCode::Success, false, "temp_");
+                let temp_prefix = "temp_";
                 let (temp_point_dir, temp_transport_dir, temp_aoe_dir) = 
                     (format!("{temp_prefix}{point_dir}"), format!("{temp_prefix}{transport_dir}"), format!("{temp_prefix}{aoe_dir}"));
-                match self.join_points_json(&json_dir, &result_dir, &point_dir, &temp_point_dir).await {
-                    Ok(_) => {}
-                    Err(e) => {
-                        result_code = e.code;
-                        has_err = true;
-                    }
+                let mut result_code = if let Err(e) = self.join_points_json(&json_dir, &result_dir, &point_dir, &temp_point_dir).await {
+                    e.code
+                } else {
+                    ErrCode::Success
+                };
+                if result_code == ErrCode::Success {
+                    result_code = if let Err(e) = self.join_transports_json(&json_dir, &result_dir, &transport_dir, &temp_transport_dir).await {
+                        e.code
+                    } else {
+                        ErrCode::Success
+                    };
                 }
-                if !has_err {
-                    match self.join_transports_json(&json_dir, &result_dir, &transport_dir, &temp_transport_dir).await {
-                        Ok(_) => {}
-                        Err(e) => {
-                            result_code = e.code;
-                            has_err = true;
+                if result_code == ErrCode::Success {
+                    result_code = if let Err(e) = self.join_aoes_json(&json_dir, &result_dir, &aoe_dir, &temp_aoe_dir).await {
+                        e.code
+                    } else {
+                        ErrCode::Success
+                    };
+                }
+                if result_code == ErrCode::Success {
+                    result_code = if let Err(e) = self.start_parser(&json_dir, &temp_point_dir, &temp_transport_dir, &temp_aoe_dir).await {
+                        e.code
+                    } else {
+                        if let Err(_) = self.write_into_result(
+                            &json_dir, &point_dir, &transport_dir, &aoe_dir,
+                            &result_dir, &temp_point_dir, &temp_transport_dir, &temp_aoe_dir
+                        ) {
+                            ErrCode::IoErr
+                        } else {
+                            ErrCode::Success
                         }
-                    }
-                }
-                if !has_err {
-                    match self.join_aoes_json(&json_dir, &result_dir, &aoe_dir, &temp_aoe_dir).await {
-                        Ok(_) => {}
-                        Err(e) => {
-                            result_code = e.code;
-                            has_err = true;
-                        }
-                    }
-                }
-                if !has_err {
-                    result_code = self.start_parser(&json_dir, &temp_point_dir, &temp_transport_dir, &temp_aoe_dir).await;
-                    match result_code {
-                        ErrCode::Success => {
-                            if let Err(_) = self.write_into_result(
-                                &json_dir, &point_dir, &transport_dir, &aoe_dir,
-                                &result_dir, &temp_point_dir, &temp_transport_dir, &temp_aoe_dir
-                            ) {
-                                result_code = ErrCode::IoErr;
-                            }
-                        },
-                        _ => {}
-                    }
+                    };
                 }
                 if let Err(e) = sender.send(result_code as u16).await {
                     warn!("!!Failed to send update json : {e:?}");
                 }
             }
             ParserOperation::RecoverJson(sender) => {
-                let result_code = self.start_parser(&result_dir, &point_dir, &transport_dir, &aoe_dir).await;
+                let result_code = if let Err(e) = self.start_parser(&result_dir, &point_dir, &transport_dir, &aoe_dir).await {
+                    e.code
+                } else {
+                    ErrCode::Success
+                };
                 if let Err(e) = sender.send(result_code as u16).await {
                     warn!("!!Failed to send recover json : {e:?}");
                 }
@@ -158,37 +157,49 @@ impl ParserManager {
                 }
             }
             ParserOperation::UpdateDff(sender) => {
-                let (mut result_code, mut has_err, temp_prefix) = (ErrCode::Success, false, "temp_");
+                let temp_prefix = "temp_";
                 let temp_dff_dir = format!("{temp_prefix}{dff_dir}");
-                match self.join_dffs_json(&json_dir, &result_dir, &dff_dir, &temp_dff_dir).await {
-                    Ok(_) => {}
-                    Err(e) => {
-                        result_code = e.code;
-                        has_err = true;
-                    }
-                }
-                if !has_err {
-                    result_code = self.start_dff_parser(&json_dir, &temp_dff_dir).await;
-                    match result_code {
-                        ErrCode::Success => {
-                            if let Err(_) = self.write_into_result_dff(
-                                &json_dir, &dff_dir, 
-                                &result_dir, &temp_dff_dir,
-                            ) {
-                                result_code = ErrCode::IoErr;
-                            }
-                        },
-                        _ => {}
-                    }
+                let mut result_code = if let Err(e) = self.join_dffs_json(&json_dir, &result_dir, &dff_dir, &temp_dff_dir).await {
+                    e.code
+                } else {
+                    ErrCode::Success
+                };
+                if result_code == ErrCode::Success {
+                    result_code = if let Err(e) = self.start_dff_parser(&json_dir, &temp_dff_dir).await {
+                        e.code
+                    } else {
+                        if let Err(_) = self.write_into_result_dff(
+                            &json_dir, &dff_dir, 
+                            &result_dir, &temp_dff_dir,
+                        ) {
+                            ErrCode::IoErr
+                        } else {
+                            ErrCode::Success
+                        }
+                    };
                 }
                 if let Err(e) = sender.send(result_code as u16).await {
                     warn!("!!Failed to send update dff : {e:?}");
                 }
             }
             ParserOperation::RecoverDff(sender) => {
-                let result_code = self.start_dff_parser(&result_dir, &dff_dir).await;
+                let result_code = if let Err(e) = self.start_dff_parser(&result_dir, &dff_dir).await {
+                    e.code
+                } else {
+                    ErrCode::Success
+                };
                 if let Err(e) = sender.send(result_code as u16).await {
                     warn!("!!Failed to send recover dff : {e:?}");
+                }
+            }
+            ParserOperation::StartDff(sender) => {
+                let result_code = if let Err(e) = do_start_dff().await {
+                    e.code
+                } else {
+                    ErrCode::Success
+                };
+                if let Err(e) = sender.send(result_code as u16).await {
+                    warn!("!!Failed to send start dff : {e:?}");
                 }
             }
             ParserOperation::GetDffMapping(sender) => {
@@ -572,99 +583,44 @@ impl ParserManager {
         Ok(())
     }
 
-    async fn start_parser(&self, path: &str, point_dir: &str, transport_dir: &str, aoe_dir: &str) -> ErrCode {
+    async fn start_parser(&self, path: &str, point_dir: &str, transport_dir: &str, aoe_dir: &str) -> Result<(), AdapterErr> {
         let file_name_points = format!("{path}/{point_dir}");
         let file_name_transports = format!("{path}/{transport_dir}");
         let file_name_aoes = format!("{path}/{aoe_dir}");
         let old_point_mapping = self.query_point_mapping();
         let old_aoe_mapping = self.query_aoe_mapping();
-        let mut points_mapping: HashMap<String, u64> = HashMap::default();
-        let mut point_param: HashMap<String, PointParam> = HashMap::default();
-        let mut point_discrete: HashMap<String, bool> = HashMap::default();
-        let mut current_id = 65535_u64;
-        let mut result_code = ErrCode::Success;
-        let mut has_err = false;
+
         if !register_result::get_result() {
             log::info!("start do register");
-            match do_register_sync().await {
-                Ok(_) => {},
-                Err(err) => {
-                    log::error!("{}", err.msg);
-                    has_err = true;
-                    result_code = err.code;
-                }
-            }
+            do_register_sync().await?;
             log::info!("end do register");
         }
-        if !has_err {
-            log::info!("start parse point.json");
-            match self.parse_points(file_name_points, &old_point_mapping).await {
-                Ok((mapping, param, discrete)) => {
-                    points_mapping = mapping;
-                    point_param = param;
-                    point_discrete = discrete;
-                    // 保存到全局变量中
-                    param_point_map::save_all(points_mapping.clone());
-                    point_param_map::save_reversal(points_mapping.clone());
-                },
-                Err(err) => {
-                    log::error!("{}", err.msg);
-                    has_err = true;
-                    result_code = err.code;
-                }
-            }
-            log::info!("end parse point.json");
-        }
-        if !has_err {
-            log::info!("start parse transports.json");
-            match self.parse_transports(file_name_transports, &points_mapping, &point_param, &point_discrete).await {
-                Ok(id) => current_id = id,
-                Err(err) => {
-                    log::error!("{}", err.msg);
-                    has_err = true;
-                    result_code = err.code;
-                }
-            }
-            log::info!("end parse transports.json");
-        }
-        if !has_err {
-            log::info!("start parse aoes.json");
-            match self.parse_aoes(file_name_aoes, &points_mapping, current_id).await {
-                Ok(_) => {},
-                Err(err) => {
-                    log::error!("{}", err.msg);
-                    has_err = true;
-                    result_code = err.code;
-                }
-            }
-            log::info!("end parse aoes.json");
-        }
-        if !has_err {
-            log::info!("start do reset");
-            let new_aoe_mapping = self.query_aoe_mapping();
-            match do_reset(&old_aoe_mapping, &new_aoe_mapping).await {
-                Ok(()) => {},
-                Err(err) => {
-                    log::error!("{}", err.msg);
-                    has_err = true;
-                    result_code = err.code;
-                }
-            }
-            log::info!("end do reset");
-        }
-        if !has_err {
-            log::info!("start do query_data mqtt");
-            match do_data_query().await {
-                Ok(()) => {},
-                Err(err) => {
-                    log::error!("{}", err.msg);
-                    // has_err = true;
-                    result_code = err.code;
-                },
-            }
-            log::info!("end do query_data mqtt");
-        }
-        result_code
+
+        log::info!("start parse point.json");
+        let (points_mapping, point_param, point_discrete) = self.parse_points(file_name_points, &old_point_mapping).await?;
+        // 保存到全局变量中
+        param_point_map::save_all(points_mapping.clone());
+        point_param_map::save_reversal(points_mapping.clone());
+        log::info!("end parse point.json");
+
+        log::info!("start parse transports.json");
+        let current_id = self.parse_transports(file_name_transports, &points_mapping, &point_param, &point_discrete).await?;
+        log::info!("end parse transports.json");
+
+        log::info!("start parse aoes.json");
+        let _ = self.parse_aoes(file_name_aoes, &points_mapping, current_id).await?;
+        log::info!("end parse aoes.json");
+
+        log::info!("start do reset");
+        let new_aoe_mapping = self.query_aoe_mapping();
+        let _ = do_reset(&old_aoe_mapping, &new_aoe_mapping).await?;
+        log::info!("end do reset");
+
+        log::info!("start do query_data mqtt");
+        let _ = do_data_query().await?;
+        log::info!("end do query_data mqtt");
+
+        Ok(())
     }
 
     async fn parse_points(&self, path: String, old_point_mapping: &HashMap<String, u64>) -> Result<(HashMap<String, u64>, HashMap<String, PointParam>, HashMap<String, bool>), AdapterErr> {
@@ -849,39 +805,17 @@ impl ParserManager {
         delete_items_by_keys_with_tree_name(&self.inner_db, DEV_TREE, keys)
     }
 
-    async fn start_dff_parser(&self, path: &str, dff_dir: &str) -> ErrCode {
+    async fn start_dff_parser(&self, path: &str, dff_dir: &str) -> Result<(), AdapterErr> {
         let file_name_dffs = format!("{path}/{dff_dir}");
         let point_mapping = self.query_point_mapping();
+        // 获取未运行的报表北向ID
         let old_dff_mapping = self.query_dff_mapping();
+        let unrun_dffs = do_query_unrun_dffs().await?;
+        let unrun_dffs_north = unrun_dffs.iter().filter_map(|v| old_dff_mapping.get(v).cloned()).collect::<Vec<u64>>();
         let current_id = 65535_u64;
-        let mut result_code = ErrCode::Success;
-        let mut has_err = false;
-        if !has_err {
-            log::info!("start parse dffs.json");
-            match self.parse_dffs(file_name_dffs, &point_mapping, current_id).await {
-                Ok(_) => {},
-                Err(err) => {
-                    log::error!("{}", err.msg);
-                    has_err = true;
-                    result_code = err.code;
-                }
-            }
-            log::info!("end parse point.json");
-        }
-        if !has_err {
-            log::info!("start do reset");
-            let new_dff_mapping = self.query_dff_mapping();
-            match do_reset_dff(&old_dff_mapping, &new_dff_mapping).await {
-                Ok(()) => {},
-                Err(err) => {
-                    log::error!("{}", err.msg);
-                    has_err = true;
-                    result_code = err.code;
-                }
-            }
-            log::info!("end do reset");
-        }
-        result_code
+        self.parse_dffs(file_name_dffs, &point_mapping, current_id).await?;
+        let new_dff_mapping = self.query_dff_mapping();
+        do_reset_dff(unrun_dffs_north, &new_dff_mapping).await
     }
 
     async fn parse_dffs(&self, path: String, points_mapping: &HashMap<String, u64>, current_id: u64) -> Result<(), AdapterErr> {
@@ -1067,6 +1001,19 @@ async fn recover_dff(
     HttpResponse::RequestTimeout().finish()
 }
 
+#[get("/api/v1/parser/start_dff")]
+async fn start_dff(
+    sender: web::Data<Sender<ParserOperation>>,
+) -> HttpResponse {
+    let (tx, rx) = bounded(1);
+    if let Ok(()) = sender.send(ParserOperation::StartDff(tx)).await {
+        if let Ok(r) = rx.recv().await {
+            return HttpResponse::Ok().content_type("application/json").json(r);
+        }
+    }
+    HttpResponse::RequestTimeout().finish()
+}
+
 #[get("/api/v1/parser/dff_mapping")]
 async fn get_dff_mapping(
     sender: web::Data<Sender<ParserOperation>>,
@@ -1089,6 +1036,7 @@ pub fn config_parser_web_service(cfg: &mut web::ServiceConfig) {
     .service(get_aoe_mapping)
     .service(update_dff)
     .service(recover_dff)
+    .service(start_dff)
     .service(get_dff_mapping);
 }
 
