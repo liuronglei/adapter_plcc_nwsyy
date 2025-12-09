@@ -7,7 +7,7 @@ use actix_web::web::Data;
 use crate::ADAPTER_NAME;
 use crate::parser::{start_parser_service, config_parser_web_service};
 use crate::utils::plccmqtt::{do_register, do_data_query, do_keep_alive, do_cloud_event};
-use crate::utils::memsmqtt::do_meter_data_query;
+use crate::utils::memsmqtt::{do_meter_data_query, do_mems_event};
 use crate::utils::plccapi::aoe_result_upload;
 use crate::utils::memsapi::dff_result_upload;
 use crate::utils::log_init::write_log_config;
@@ -35,55 +35,63 @@ pub async fn run_adapter() -> std::io::Result<()> {
     let http_server_port = env.get_http_server_port();
     let data_path = env.get_db_dir();
     // APP注册和数据查询
-    log::info!("start do register mqtt");
+    log::info!("|-> start do register mqtt");
     match do_register().await {
         Ok(_) => {},
         Err(err) => {
             log::error!("do register error: {}", err.msg);
         },
     }
-    log::info!("end do register mqtt");
-    log::info!("start do data_query mqtt");
+    log::info!("|<- end do register mqtt");
+    log::info!("|-> start do data_query mqtt");
     match do_data_query().await {
         Ok(_) => {},
         Err(err) => {
             log::error!("do data_query error: {}", err.msg);
         },
     }
-    log::info!("end do data_query mqtt");
-    log::info!("start do aoe_result_upload mqtt");
+    log::info!("|<- end do data_query mqtt");
+    log::info!("|-> start do aoe_result_upload mqtt");
     match aoe_result_upload().await {
         Ok(_) => {},
         Err(err) => {
             log::error!("do aoe_result_upload error: {}", err.msg);
         },
     }
-    log::info!("end do aoe_result_upload mqtt");
-    log::info!("start do dff_result_upload mqtt");
+    log::info!("|<- end do aoe_result_upload mqtt");
+    log::info!("|-> start do dff_result_upload mqtt");
     match dff_result_upload().await {
         Ok(_) => {},
         Err(err) => {
             log::error!("do dff_result_upload error: {}", err.msg);
         },
     }
-    log::info!("end do dff_result_upload mqtt");
-    log::info!("start do keep_alive mqtt");
+    log::info!("|<- end do dff_result_upload mqtt");
+    log::info!("|-> start do keep_alive mqtt");
     match do_keep_alive().await {
         Ok(_) => {},
         Err(err) => {
             log::error!("do keep_alive error: {}", err.msg);
         },
     }
-    log::info!("end do keep_alive mqtt");
-    log::info!("start do cloud_event mqtt");
+    log::info!("|<- end do keep_alive mqtt");
+    log::info!("|-> start do cloud_event mqtt");
     match do_cloud_event().await {
         Ok(_) => {},
         Err(err) => {
             log::error!("do cloud_event error: {}", err.msg);
         },
     }
-    log::info!("end do cloud_event mqtt");
-    log::info!("start do meter_data_query");
+    log::info!("|<- end do cloud_event mqtt");
+    log::info!("|-> start do do_mems_event mqtt");
+    match do_mems_event().await {
+        Ok(_) => {},
+        Err(err) => {
+            log::error!("do do_mems_event error: {}", err.msg);
+        },
+    }
+    log::info!("|<- end do do_mems_event mqtt");
+    log::info!("|-> start do meter_data_query");
     match do_meter_data_query().await {
         Ok(_) => {},
         Err(err) => {

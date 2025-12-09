@@ -14,16 +14,16 @@ use crate::model::north::{MyDffModels, MyDffResult};
 use crate::model::south::FlowOperation;
 use crate::utils::localapi::query_dff_mapping;
 
-pub async fn do_mems_event_dff() -> Result<(), AdapterErr> {
+pub async fn do_mems_event() -> Result<(), AdapterErr> {
     tokio::spawn(async {
-        if let Err(e) = mems_event_dff().await {
+        if let Err(e) = mems_event().await {
             log::error!("do mems_event_dff error: {}", e.msg);
         }
     });
     Ok(())
 }
 
-pub async fn mems_event_dff() -> Result<(), AdapterErr> {
+pub async fn mems_event() -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let app_name = env.get_app_name();
     mqtt_provider(
@@ -73,7 +73,9 @@ fn do_get_dff_config(mems_event: MemsEventRequest) -> MemsEventResponse {
             Ok(my_dffs) => {
                 dffs = my_dffs.dffs;
             },
-            Err(_) => {}
+            Err(e) => {
+                log::error!("{:?}", e);
+            }
         }
     }
     MemsEventResponse {
