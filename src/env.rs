@@ -13,6 +13,7 @@ pub const CONF_PATH: &str = "configFilePath";
 pub const PLCC_SERVER: &str = "plccServer";
 pub const PLCC_USER: &str = "plccUser";
 pub const PLCC_PWD: &str = "plccPwd";
+pub const IS_USE_MEMS: &str = "isUseMems";
 pub const MEMS_SERVER: &str = "memsServer";
 pub const MEMS_USER: &str = "memsUser";
 pub const MEMS_PWD: &str = "memsPwd";
@@ -71,14 +72,14 @@ pub const METER_SUM_NO: &str = "meterSumNo";
 pub const METER_DIR: &str = "meterFileDir";
 
 
-const CONFIG_ARGS: [&str; 47] = [CONF_PATH, BEE_ID, MQTT_SERVER, MQTT_AUTH, HTTP_SERVER_PORT,
+const CONFIG_ARGS: [&str; 48] = [CONF_PATH, BEE_ID, MQTT_SERVER, MQTT_AUTH, HTTP_SERVER_PORT,
     MQTT_CLIENT_BUF_SIZE, MQTT_MV_LIMIT, SOCKET_BUF_SIZE_NORTH, SOCKET_BUF_SIZE_SOUTH, EXE_ROOT_DIR,
     POINT_FILE_DIR, TRANSPORT_DIR, JSON_DIR, RESULT_DIR, AOE_DIR, WEB_DIR, DB_DIR, LOG_DIR,
     APP_NAME, APP_MODEL, MQTT_PACKAGE_MAX_SIZE, IS_LOCAL_FRONTEND, IS_DB, IS_HIS_DB, IS_FAKE_DELETE,
     DB_DIR_SIZE_LIMIT, IS_LOCAL_MQTT, LOCAL_MQTT_PORT, LOG_LEVEL, LOG_SAVE_TIME, LOG_SAVE_SIZE,
     LOG_HIS_FILE_NUM, MQTT_TIMEOUT, DATABASE_URL, PLCC_SERVER, METER_SUM_NO, METER_DIR, DFF_DIR,
     PLCC_USER, PLCC_PWD, EIG_HOME, IS_USE_SSL, SSL_CERT_FILE_PATH, SSL_KEY_FILE_PATH,
-    MEMS_SERVER, MEMS_USER, MEMS_PWD];
+    MEMS_SERVER, MEMS_USER, MEMS_PWD, IS_USE_MEMS];
 
 pub const PING_GET: u8 = 1;
 pub const CONFIG_GET: u8 = 2;
@@ -345,6 +346,14 @@ impl Env {
 
     pub fn get_plcc_pwd(&self) -> String {
         self.properties.get(PLCC_PWD).unwrap_or(&String::new()).clone()
+    }
+
+    pub fn get_is_use_mems(&self) -> bool {
+        let r = self.properties.get(IS_USE_MEMS);
+        match r {
+            Some(s) => s.trim().to_uppercase() == "TRUE",
+            None => false,
+        }
     }
 
     pub fn get_mems_server(&self) -> String {

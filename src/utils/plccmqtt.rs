@@ -126,13 +126,10 @@ async fn get_has_model_registered() -> Result<bool, AdapterErr> {
         body,
     ).await {
         Ok(msg) => {
-            let mut has_registered = false;
-            for msg_body in msg.body {
-                if msg_body.model == app_model {
-                    has_registered = true;
-                    break;
-                }
-            }
+            let register_model_body = generate_register_model_body();
+            let has_registered = msg.body.iter()
+                .filter(|msg_body| msg_body.model == app_model)
+                .any(|msg_body| msg_body.body.iter().any(|b| b == &register_model_body));
             Ok(has_registered)
         }
         Err(e) => Err(AdapterErr {
@@ -192,13 +189,13 @@ async fn get_has_app_registered() -> Result<bool, AdapterErr> {
         body,
     ).await {
         Ok(msg) => {
-            let mut has_registered = false;
-            for msg_body in msg.body {
-                if msg_body.model == app_model {
-                    has_registered = true;
-                    break;
-                }
-            }
+            let register_app_body = generate_register_app_body(app_model);
+            let has_registered = msg.body.iter()
+                .filter(|msg_body|
+                    msg_body.model == register_app_body.model && msg_body.port == register_app_body.port
+                ).any(|msg_body| msg_body.body.iter().any(|b|
+                    b.addr == register_app_body.addr && b.desc == register_app_body.desc
+                ));
             Ok(has_registered)
         }
         Err(e) => Err(AdapterErr {
@@ -529,8 +526,8 @@ fn generate_get_model_register(model: String) -> GetModel {
     }
 }
 
-fn generate_register_model(model: String) -> RegisterModel {
-    let body = RegisterModelBody {
+fn generate_register_model_body() -> RegisterModelBody {
+    RegisterModelBody {
         name: "tgPowerCutAlarm".to_string(),
         mtype: "int".to_string(),
         unit: "".to_string(),
@@ -538,18 +535,21 @@ fn generate_register_model(model: String) -> RegisterModel {
         ratio: "".to_string(),
         isReport: "0".to_string(),
         userdefine: "".to_string(),
-    };
+    }
+}
+
+fn generate_register_model(model: String) -> RegisterModel {
     let time = Local::now().timestamp_millis();
     RegisterModel {
         token: time.to_string(),
         time: generate_current_time(),
         model,
-        body: vec![body],
+        body: vec![generate_register_model_body()],
     }
 }
 
-fn generate_register_app(model: String) -> RegisterApp {
-    let body = RegisterAPPBody {
+fn generate_register_app_body(model: String) -> RegisterAPPBody {
+    RegisterAPPBody {
         model,
         port: "NULL".to_string(),
         addr: "000000".to_string(),
@@ -561,12 +561,15 @@ fn generate_register_app(model: String) -> RegisterApp {
         isReport: "0".to_string(),
         nodeID: "".to_string(),
         productID: "".to_string(),
-    };
+    }
+}
+
+fn generate_register_app(model: String) -> RegisterApp {
     let time = Local::now().timestamp_millis();
     RegisterApp {
         token: time.to_string(),
         time: generate_current_time(),
-        body: vec![body],
+        body: vec![generate_register_app_body(model)],
     }
 }
 

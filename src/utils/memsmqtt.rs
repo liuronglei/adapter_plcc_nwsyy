@@ -395,7 +395,7 @@ pub async fn do_meter_data_query() -> Result<(), AdapterErr> {
                             timestamps,
                             meter_data,
                         );
-                        let mut meter_data_file = File::create(&format!("{meter_dir}/meter_data.csv")).unwrap();
+                        let mut meter_data_file = File::create(&meter_dir).unwrap();
                         meter_data_file.write_all(csv.as_bytes()).unwrap();
                     }
                     Err(e) => {

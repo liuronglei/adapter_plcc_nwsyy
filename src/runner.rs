@@ -59,14 +59,6 @@ pub async fn run_adapter() -> std::io::Result<()> {
         },
     }
     log::info!("|<- end do aoe_result_upload mqtt");
-    log::info!("|-> start do dff_result_upload mqtt");
-    match dff_result_upload().await {
-        Ok(_) => {},
-        Err(err) => {
-            log::error!("do dff_result_upload error: {}", err.msg);
-        },
-    }
-    log::info!("|<- end do dff_result_upload mqtt");
     log::info!("|-> start do keep_alive mqtt");
     match do_keep_alive().await {
         Ok(_) => {},
@@ -83,22 +75,33 @@ pub async fn run_adapter() -> std::io::Result<()> {
         },
     }
     log::info!("|<- end do cloud_event mqtt");
-    log::info!("|-> start do do_mems_event mqtt");
-    match do_mems_event().await {
-        Ok(_) => {},
-        Err(err) => {
-            log::error!("do do_mems_event error: {}", err.msg);
-        },
+    // 启用mems时
+    if env.get_is_use_mems() {
+        log::info!("|-> start do dff_result_upload mqtt");
+        match dff_result_upload().await {
+            Ok(_) => {},
+            Err(err) => {
+                log::error!("do dff_result_upload error: {}", err.msg);
+            },
+        }
+        log::info!("|<- end do dff_result_upload mqtt");
+        log::info!("|-> start do do_mems_event mqtt");
+        match do_mems_event().await {
+            Ok(_) => {},
+            Err(err) => {
+                log::error!("do do_mems_event error: {}", err.msg);
+            },
+        }
+        log::info!("|<- end do do_mems_event mqtt");
+        log::info!("|-> start do meter_data_query");
+        match do_meter_data_query().await {
+            Ok(_) => {},
+            Err(err) => {
+                log::error!("do meter_data_query error: {}", err.msg);
+            },
+        }
+        log::info!("end do meter_data_query");
     }
-    log::info!("|<- end do do_mems_event mqtt");
-    log::info!("|-> start do meter_data_query");
-    match do_meter_data_query().await {
-        Ok(_) => {},
-        Err(err) => {
-            log::error!("do meter_data_query error: {}", err.msg);
-        },
-    }
-    log::info!("end do meter_data_query");
     let parser_sender = start_parser_service(data_path.to_string());
     let cloned_parser_sender = Data::new(parser_sender.clone());
     let actix_web_job = std::thread::spawn(move || {
