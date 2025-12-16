@@ -305,8 +305,8 @@ async fn test_mqtt_response() {
             body: vec![
                 RegisterDevResultBody {
                     model: "DC_PLCC".to_string(),
-                    port: "".to_string(),
-                    body: vec![RegisterDevEntry { addr: "".to_string(), appname: "".to_string(), desc: "".to_string(), dev: "DC_SDTTU_frozen_1".to_string(), 
+                    port: "NULL".to_string(),
+                    body: vec![RegisterDevEntry { addr: "000000".to_string(), appname: "".to_string(), desc: "terminal".to_string(), dev: "DC_SDTTU_frozen_1".to_string(), 
                         device_type: "".to_string(), guid: "".to_string(), is_report: "".to_string(), manu_id: "".to_string(), 
                         manu_name: "".to_string(), node_id: "".to_string(), pro_type: "".to_string(), product_id: "".to_string() }
                     ]
@@ -362,7 +362,15 @@ async fn test_mqtt_response() {
             time: "".to_string(),
             body: vec![GetModelResponseBody {
                 model: "DC_PLCC".to_string(),
-                body: vec![]
+                body: vec![RegisterModelBody {
+                    name: "tgPowerCutAlarm".to_string(),
+                    mtype: "int".to_string(),
+                    unit: "".to_string(),
+                    deadzone: "".to_string(),
+                    ratio: "".to_string(),
+                    isReport: "0".to_string(),
+                    userdefine: "".to_string(),
+                }]
             }],
         }).unwrap();
         let _ = client_publish(&client, &tp, &body).await;
