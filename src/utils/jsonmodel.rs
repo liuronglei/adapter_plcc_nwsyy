@@ -741,6 +741,12 @@ pub fn from_json_to_dff_node(e_json: &str) -> Result<DfNode, String> {
                         Err(s) => { return Err(s); }
                     }
                 }
+            } else if let Some(node_type) = json_value["node_type"].as_str() {
+                match node_type.to_uppercase().replace(['_', '-'], "").as_str() {
+                    "NLSOLVE" => { model.node_type = DfNodeType::NLSolve },
+                    "NONE" => { model.node_type = DfNodeType::None },
+                    _ => { return Err(node_type.to_string()); }
+                }
             } else {
                 return Err("DffModel DfNode parse failed for node_type json format".to_string());
             }
