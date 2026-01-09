@@ -41,7 +41,7 @@ pub async fn do_start_dff() -> Result<(), AdapterErr> {
     let running_dffs = dffs.iter().map(|k| k.id).collect::<Vec<u64>>();
     match start_all(token).await {
         Ok(_) => {
-            actix_rt::time::sleep(std::time::Duration::from_millis(1000)).await;
+            actix_rt::time::sleep(std::time::Duration::from_millis(2000)).await;
             do_dff_action(FlowOperation::StartFlows(running_dffs)).await
         },
         Err(e) => Err(e),
@@ -62,7 +62,7 @@ pub async fn do_reset_dff(unrun_dffs_north: Vec<u64>, dff_mapping: &HashMap<u64,
         }).collect::<Vec<u64>>();
     match reset(token.clone()).await {
         Ok(_) => {
-            actix_rt::time::sleep(std::time::Duration::from_millis(1000)).await;
+            actix_rt::time::sleep(std::time::Duration::from_millis(2000)).await;
             do_dff_action(FlowOperation::StartFlows(running_dffs)).await
         },
         Err(e) => Err(e),
