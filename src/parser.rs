@@ -545,7 +545,7 @@ impl ParserManager {
             let msg = "报表JSON文件不存在".to_string();
             log::error!("{}", msg);
             Err(AdapterErr {
-                code: ErrCode::PointJsonNotFound,
+                code: ErrCode::DffJsonNotFound,
                 msg,
             })
         }

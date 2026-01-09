@@ -110,18 +110,7 @@ async fn query_dffs(token: String) -> Result<Vec<DffModel>, AdapterErr> {
         .get(&url)
         .headers(headers)
         .send().await {
-        if let Ok(dffs_value) = response.json::<Vec<serde_json::Value>>().await {
-            let mut dffs = vec![];
-            for dff_value in dffs_value {
-                match from_serde_value_to_dff_model(&dff_value) {
-                    Ok(dff) => {
-                        dffs.push(dff);
-                    }
-                    Err(e) => {
-                        log::error!("from_serde_value_to_dff_model: {e}");
-                    },
-                }
-            }
+        if let Ok(dffs) = response.json::<Vec<DffModel>>().await {
             Ok(dffs)
         } else {
             Err(AdapterErr {
