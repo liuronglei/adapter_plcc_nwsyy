@@ -9,6 +9,7 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use tokio::time::{interval, Duration};
 use crate::model::datacenter::MemsEventDffStatus;
+use crate::model::polars_to_json_df;
 use crate::model::south::{DffModel, DffResult, FlowOperation};
 use crate::model::north::MyDffResult;
 use crate::utils::jsonmodel::from_serde_value_to_dff_model;
@@ -347,7 +348,7 @@ async fn do_dff_upload(client: &AsyncClient, topic_request_update: &str, topic_r
                 flow_id,
                 start_time: Some(a.start_time),
                 end_time: Some(a.end_time),
-                result: a.result.clone(),
+                result: polars_to_json_df(&a.result),
             }
         }).collect::<Vec<MyDffResult>>();
     if !my_dff_result.is_empty() {

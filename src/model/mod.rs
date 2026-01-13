@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::time::Duration;
 use std::vec;
+use polars_core::series::Series;
 use serde_json::Value;
+use polars_core::prelude::{AnyValue, Column, DataType};
 use polars_core::frame::DataFrame;
 
 use north::MyPoints;
@@ -930,17 +932,7 @@ fn dffnodes_to_south(dff_id: u64, north: Vec<MyDfNode>) -> Result<Vec<DfNode>, A
         let node_type = match node_n.node_type {
             MyDfNodeType::Source(v) => {
                 let source = match v {
-                    MyDfSource::Data(v) => {
-                        if let Ok(value) = serde_json::from_slice::<Value>(&v) {
-                            if let Ok(df) = serde_json::from_value::<DataFrame>(value) {
-                                DfSource::Data(df)
-                            } else {
-                                DfSource::Data(DataFrame::empty())
-                            }
-                        } else {
-                            DfSource::Data(DataFrame::empty())
-                        }
-                    },
+                    MyDfSource::Data(v) => DfSource::Data(json_df_to_polars(&v)),
                     MyDfSource::File(v) => DfSource::File(v),
                     MyDfSource::Url(v) => DfSource::Url(v),
                     MyDfSource::Image(v) => DfSource::Image(v),
@@ -1072,4 +1064,108 @@ fn dffactions_to_south(dff_id: u64, north: Vec<MyDfActionEdge>) -> Result<Vec<Df
         actions.push(action_s);
     }
     Ok(actions)
+}
+
+pub fn polars_to_json_df(df: &DataFrame) -> JsonDataFrame {
+    let columns: Vec<String> = df
+        .get_column_names_owned()
+        .into_iter()
+        .map(Into::into)
+        .collect();
+    let height = df.height();
+    let mut data = Vec::with_capacity(height);
+    for row_idx in 0..height {
+        let mut row = Vec::new();
+        for col in df.get_columns() {
+            let val = col.get(row_idx).unwrap();
+            row.push(anyvalue_to_json(val));
+        }
+        data.push(row);
+    }
+    JsonDataFrame { columns, data }
+}
+
+pub fn json_df_to_polars(df: &JsonDataFrame) -> DataFrame {
+    let height = df.data.len();
+    let width = df.columns.len();
+    // 空表兜底
+    if height == 0 || width == 0 {
+        return DataFrame::empty();
+    }
+    let mut columns_vec = Vec::with_capacity(width);
+    for col_idx in 0..width {
+        let col_name = &df.columns[col_idx];
+        let mut values: Vec<AnyValue<'static>> = Vec::with_capacity(height);
+        for row in &df.data {
+            if let Some(v) = row.get(col_idx) {
+                values.push(json_to_anyvalue(v));
+            } else {
+                values.push(AnyValue::Null);
+            }
+        }
+        let series = Series::from_any_values(col_name.into(), &values, true)
+            .unwrap_or_else(|_| {
+                Series::new_empty(col_name.into(), &DataType::Null)
+            });
+        columns_vec.push(Column::new(col_name.clone().into(), series));
+    }
+    DataFrame::new(columns_vec).unwrap_or_else(|_| DataFrame::empty())
+}
+
+fn anyvalue_to_json(val: AnyValue) -> Value {
+    match val {
+        AnyValue::Null => Value::Null,
+        AnyValue::Boolean(v) => Value::Bool(v),
+        AnyValue::Int8(v) => Value::from(v),
+        AnyValue::Int16(v) => Value::from(v),
+        AnyValue::Int32(v) => Value::from(v),
+        AnyValue::Int64(v) => Value::from(v),
+        AnyValue::UInt8(v) => Value::from(v),
+        AnyValue::UInt16(v) => Value::from(v),
+        AnyValue::UInt32(v) => Value::from(v),
+        AnyValue::UInt64(v) => Value::from(v),
+        AnyValue::Float32(v) => Value::from(v),
+        AnyValue::Float64(v) => Value::from(v),
+        AnyValue::String(v) => Value::from(v),
+        AnyValue::List(series) => {
+            Value::Array(
+                series
+                    .iter()
+                    .map(anyvalue_to_json)
+                    .collect()
+            )
+        }
+        _ => Value::Null, // 其他不支持的类型
+    }
+}
+
+fn json_to_anyvalue(v: &Value) -> AnyValue<'static> {
+    match v {
+        Value::Null => AnyValue::Null,
+        Value::Bool(b) => AnyValue::Boolean(*b),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                AnyValue::Int64(i)
+            } else if let Some(f) = n.as_f64() {
+                AnyValue::Float64(f)
+            } else {
+                AnyValue::Null
+            }
+        }
+        Value::String(s) => AnyValue::StringOwned(s.into()),
+        Value::Array(arr) => {
+            let values: Vec<AnyValue<'static>> =
+                arr.iter().map(json_to_anyvalue).collect();
+            let series = Series::from_any_values(
+                "".into(),
+                &values,
+                true, // strict = true，与正向 List 语义匹配
+            )
+            .unwrap_or_else(|_| Series::new_empty("".into(), &DataType::Null));
+
+            AnyValue::List(series)
+        }
+        // 正向 anyvalue_to_json 根本不会产生 Object
+        Value::Object(_) => AnyValue::Null,
+    }
 }

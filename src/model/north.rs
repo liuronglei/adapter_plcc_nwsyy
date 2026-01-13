@@ -3,6 +3,7 @@ use derive_more::Display;
 use polars_core::frame::DataFrame;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
+use serde_json::Value;
 
 use crate::{AdapterErr, ErrCode};
 
@@ -506,7 +507,7 @@ pub enum MyDfNodeType {
 #[serde_as]
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum MyDfSource {
-    Data(Vec<u8>),
+    Data(JsonDataFrame),
     File(String),
     Url(String),
     Image(crate::model::south::ImageDfFilter),
@@ -565,5 +566,12 @@ pub struct MyDffResult {
     pub start_time: Option<u64>,
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub end_time: Option<u64>,
-    pub result: DataFrame,
+    pub result: JsonDataFrame,
+}
+
+#[serde_as]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Default, Debug)]
+pub struct JsonDataFrame {
+    pub columns: Vec<String>,
+    pub data: Vec<Vec<Value>>,
 }
