@@ -8,6 +8,7 @@ use base64::{Engine, engine::general_purpose::STANDARD as b64_standard};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use tokio::time::{interval, Duration};
+// use mems::ml::jsonmodel::from_serde_value_to_dff_model;
 use crate::model::datacenter::MemsEventDffStatus;
 use crate::model::polars_to_json_df;
 use crate::model::south::{DffModel, DffResult, FlowOperation};
@@ -104,14 +105,25 @@ async fn delete_dffs(token: String, ids: Vec<u64>) -> Result<(), AdapterErr> {
 async fn query_dffs(token: String) -> Result<Vec<DffModel>, AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let mems_server = env.get_mems_server();
-    let url = format!("{mems_server}/{URL_DFFS}");
+    let url = format!("{mems_server}/{URL_DFFS}_json");
     let headers = get_header(token);
     let client = Client::new();
     if let Ok(response) = client
         .get(&url)
         .headers(headers)
         .send().await {
-        if let Ok(dffs) = response.json::<Vec<DffModel>>().await {
+        if let Ok(dffs_value) = response.json::<Vec<serde_json::Value>>().await {
+            let mut dffs = vec![];
+            for dff_value in dffs_value {
+                match from_serde_value_to_dff_model(&dff_value) {
+                    Ok(dff) => {
+                        dffs.push(dff);
+                    }
+                    Err(e) => {
+                        log::error!("from_serde_value_to_dff_model: {e}");
+                    },
+                }
+            }
             Ok(dffs)
         } else {
             Err(AdapterErr {

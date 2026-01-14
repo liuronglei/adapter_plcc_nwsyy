@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 use derive_more::Display;
-use polars_core::frame::DataFrame;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
-use serde_json::Value;
 
 use crate::{AdapterErr, ErrCode};
 
@@ -487,7 +485,7 @@ pub enum MyDfNodeType {
     /// transformation
     Transform(String),
     /// tensor eval script
-    TensorEval(bool, bool, bool, String),
+    TensorEval(String, u8, Option<String>),
     /// sql execute
     Sql(String),
     /// linear equations
@@ -507,7 +505,7 @@ pub enum MyDfNodeType {
 #[serde_as]
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum MyDfSource {
-    Data(JsonDataFrame),
+    Data(Vec<u8>),
     File(String),
     Url(String),
     Image(crate::model::south::ImageDfFilter),
@@ -566,12 +564,5 @@ pub struct MyDffResult {
     pub start_time: Option<u64>,
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub end_time: Option<u64>,
-    pub result: JsonDataFrame,
-}
-
-#[serde_as]
-#[derive(Serialize, Deserialize, PartialEq, Clone, Default, Debug)]
-pub struct JsonDataFrame {
-    pub columns: Vec<String>,
-    pub data: Vec<Vec<Value>>,
+    pub result: Vec<u8>,
 }

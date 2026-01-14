@@ -80,6 +80,40 @@ impl<'a> Parser<'a> {
             self.return_stmt()
         } else if self.ahead_is_keyword("fn") {
             self.fn_dec_stmt()
+        } else if self.peek() == Some('[') {
+            let loc = self.loc();
+            let mut left_s = String::new();
+            loop {
+                let next_c = self.peek();
+                match next_c {
+                    None => return Err(ParseError::MissingRParen(0)),
+                    Some(c) => {
+                        if (c == '=' || c == ':') && !self.ahead_is_keyword("==") {
+                            self.advance();
+                            break;
+                        } else {
+                            self.advance();
+                            left_s.push(c);
+                        }
+                    }
+                }
+            }
+
+            let left = left_s
+                .parse::<Expr>()
+                .map_err(|_| ParseError::UnexpectedToken(loc.start.line as usize, loc.start.column as usize))?;
+            let id = get_array_from_expr(&left).ok_or_else(|| ParseError::UnexpectedToken(
+                self.line as usize,
+                self.column as usize,
+            ))?;
+            if id.len() == 0 {
+                return Err(ParseError::UnexpectedToken(
+                    self.line as usize,
+                    self.column as usize,
+                ));
+            }
+            let right = self.read_expr(String::new(), false)?;
+            Ok(Stmt::VarDec(VarDecStmt { loc, id, init: right }.into()))
         } else if self.ahead_is_id_start() {
             // var declare or expression stmt
             let mut loc = self.loc();
@@ -90,7 +124,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 let expr = self.read_expr(String::new(), false)?;
                 loc.end = self.pos();
-                Ok(Stmt::VarDec(VarDecStmt { loc, id: name, init: expr, }.into()))
+                Ok(Stmt::VarDec(VarDecStmt { loc, id: vec![name], init: expr, }.into()))
             } else {
                 // call function
                 let expr = self.read_expr(name, false)?;
@@ -245,7 +279,8 @@ impl<'a> Parser<'a> {
                     self.advance();
                     let expr = self.read_expr(String::new(), false)?;
                     loc.end = self.pos();
-                    init = Some(VarDecStmt { loc, id: name, init: expr})
+                    let id = vec![name];
+                    init = Some(VarDecStmt { loc, id, init: expr})
                 } else {
                     return Err(ParseError::UnexpectedToken(
                         self.line as usize,
@@ -348,20 +383,46 @@ impl<'a> Parser<'a> {
 
     fn return_stmt(&mut self) -> Result<Stmt, ParseError> {
         let loc = self.loc();
-        self.advance_n(6);
+        self.advance_n(6); // 跳过 "return"
         let mut ret = ReturnStmt {
             loc,
-            argument: None,
+            arguments: None,
         };
         self.skip_whitespace_or_comment();
-        if !self.ahead_is_symbol('{') {
-            if self.ahead_is_symbol(';') {
-                self.advance();
-            } else {
-                ret.argument = Some(self.read_expr(String::new(), false)?);
+        // 处理分号或换行
+        if self.ahead_is_symbol(';') || self.ahead_is_eof() {
+            self.advance();
+        } else if self.ahead_is_symbol('(') {
+            self.advance();
+            let mut multi_return = "[".to_string();
+            loop {
+                match self.peek() {
+                    Some('}') | None => break,
+                    Some(';') => {
+                        self.advance();
+                        break;
+                    }
+                    Some(c) => {
+                        multi_return.push(c);
+                        self.advance();
+                    }
+                }
             }
+            let pos = multi_return.as_str().rfind(')').ok_or_else(|| ParseError::UnexpectedToken(
+                self.line as usize,
+                self.column as usize,
+            ))?;
+            multi_return.truncate(pos);
+            multi_return.push(']');
+            let expr = multi_return
+                .parse::<Expr>()
+                .map_err(|_| ParseError::UnexpectedToken(self.line as usize,
+                                                         self.column as usize))?;
+            ret.arguments = expr.split_vec();
+        } else {
+            let arg = self.read_expr(String::new(), false)?;
+            ret.arguments = Some(vec![arg]);
         }
-
         ret.loc.end = self.pos();
         Ok(Stmt::Return(ret.into()))
     }
@@ -1026,6 +1087,8 @@ pub fn parse_prog(code: &str) -> Result<Prog, ParseError> {
 }
 
 use petgraph::prelude::*;
+pub const PRE_TREAT_SELECT: &str = "pre_treat_";
+
 pub fn create_stmt_tree(prog: &Prog) -> DiGraph<StmtNode, u32> {
     let mut g = DiGraph::new();
     let root = g.add_node(StmtNode::Root);
@@ -1035,12 +1098,14 @@ pub fn create_stmt_tree(prog: &Prog) -> DiGraph<StmtNode, u32> {
     g
 }
 
-pub const PRE_TREAT_SELECT: &str = "pre_treat_";
 fn create_node(g: &mut DiGraph<StmtNode, u32>, father: NodeIndex, stmt: &Stmt) {
     match stmt {
         Stmt::VarDec(s) => {
+            if s.id.len() != 1 {
+                return;
+            }
             // 如果是预处理的变量，不加入到树中
-            if s.id.starts_with(PRE_TREAT_SELECT) {
+            if s.id[0].starts_with(PRE_TREAT_SELECT) {
                 g.add_node(StmtNode::VarDec(s.as_ref().clone()));
                 return;
             }
@@ -1121,5 +1186,25 @@ fn create_node(g: &mut DiGraph<StmtNode, u32>, father: NodeIndex, stmt: &Stmt) {
         }
         // not implemented
         Stmt::ForIn(_) => {}
+    }
+}
+
+fn get_array_from_expr(expr: &Expr) -> Option<Vec<String>> {
+    let token = &expr.rpn.last()?;
+    if let Token::Tensor(n) = token {
+        let len = n.unwrap();
+        let mut r: Vec<String> = Vec::with_capacity(len);
+        for i in 0..len {
+            if let Token::Var(s) = &expr.rpn[i] {
+                r.push(s.clone());
+            } else if let Token::Str(s) = token {
+                r.push(s.clone());
+            } else {
+                return None;
+            }
+        }
+        Some(r)
+    } else {
+        None
     }
 }

@@ -1700,7 +1700,7 @@ pub enum RsExpr {
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct VarDecStmt {
     pub loc: SourceLoc,
-    pub id: String,
+    pub id: Vec<String>,
     pub init: Expr,
 }
 
@@ -1723,7 +1723,7 @@ pub struct ContinueStmt {
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ReturnStmt {
     pub loc: SourceLoc,
-    pub argument: Option<Expr>,
+    pub arguments: Option<Vec<Expr>>,
 }
 
 #[derive(Debug)]

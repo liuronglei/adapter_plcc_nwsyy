@@ -1,8 +1,12 @@
 use std::str::FromStr;
+use std::io::Cursor;
 
 use base64::{engine, Engine};
 use petgraph::graph::DiGraph;
 use polars_core::frame::DataFrame;
+use polars_io::parquet::write::{ParquetWriter, ParquetCompression};
+use polars_io::parquet::read::ParquetReader;
+use polars_io::SerReader;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 
@@ -32,10 +36,15 @@ impl DfSource {
         let mut json = "".to_string();
         match self {
             DfSource::Data(d) => {
-                if let Ok(s) = serde_json::to_string(d){
-                    json += &format!("\"Data\":{s}");
+                let mut buf = Vec::new();
+                let mut d = d.clone();
+                if ParquetWriter::new(&mut buf)
+                    .with_compression(ParquetCompression::Zstd(None))
+                    .finish(&mut d).is_ok()
+                {
+                    json += &format!("\"Data\":{:?}", buf);
                 } else {
-                    json += "\"Data\":\"\"";
+                    json += "\"Data\":[]";
                 }
             }
             DfSource::File(s) => {
@@ -401,7 +410,16 @@ fn from_json_to_dfsource(json_str: &str) -> Result<DfSource, String> {
             for (key, value) in obj.iter() {
                 return match key.as_str() {
                     "Data" => {
-                        if let Ok(df) = serde_json::from_value::<DataFrame>(value.clone()) {
+                        let buf: Vec<u8> = value
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|v| v.as_u64())
+                            .filter(|&n| n <= u8::MAX as u64)
+                            .map(|n| n as u8)
+                            .collect();
+                        let cursor = Cursor::new(buf);
+                        if let Ok(df) = ParquetReader::new(cursor).finish() {
                             Ok(DfSource::Data(df))
                         } else {
                             Ok(DfSource::Data(DataFrame::empty()))
