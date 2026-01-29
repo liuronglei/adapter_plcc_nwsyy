@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::mydb;
 use crate::model::datacenter::QueryDevResponseBody;
+use crate::utils::memsmqtt::do_meter_data_query;
 use crate::{AdapterErr, ErrCode, ADAPTER_NAME};
 use crate::model::north::{MyAoe, MyAoes, MyDffModel, MyDffModels, MyMeasurement, MyPoints, MyTransport, MyTransports, PointParam};
 use crate::model::{points_to_south, transports_to_south, aoes_to_south, dffs_to_south};
@@ -35,6 +36,7 @@ pub enum ParserOperation {
     GetDffMapping(Sender<HashMap<u64, u64>>),
     UpdateDff(Sender<u16>),
     RecoverDff(Sender<u16>),
+    GetMeterData(Sender<String>),
     StartDff(Sender<u16>),
     // 退出数据库服务
     Quit,
@@ -205,6 +207,15 @@ impl ParserManager {
             ParserOperation::GetDffMapping(sender) => {
                 if let Err(e) = sender.send(self.query_dff_mapping()).await {
                     warn!("!!Failed to send get dff_mapping : {e:?}");
+                }
+            }
+            ParserOperation::GetMeterData(sender) => {
+                let meter_data = match do_meter_data_query().await {
+                    Ok(v) => v,
+                    Err(_) => "".to_string()
+                };
+                if let Err(e) = sender.send(meter_data).await {
+                    warn!("!!Failed to send get history_data : {e:?}");
                 }
             }
             ParserOperation::Quit => {}
@@ -1027,6 +1038,25 @@ async fn get_dff_mapping(
     HttpResponse::RequestTimeout().finish()
 }
 
+#[get("/api/v1/meter/data")]
+async fn get_meter_data(
+    sender: web::Data<Sender<ParserOperation>>,
+) -> HttpResponse {
+    let (tx, rx) = bounded(1);
+    if let Ok(()) = sender.send(ParserOperation::GetMeterData(tx)).await {
+        if let Ok(csv_string) = rx.recv().await {
+            return HttpResponse::Ok()
+                .insert_header(("Content-Type", "text/csv; charset=utf-8"))
+                .insert_header((
+                    "Content-Disposition",
+                    "attachment; filename=\"history_data.csv\"",
+                ))
+                .body(csv_string);
+        }
+    }
+    HttpResponse::RequestTimeout().finish()
+}
+
 pub fn config_parser_web_service(cfg: &mut web::ServiceConfig) {
     // 开放控制接口
     cfg.service(update_json)
@@ -1037,7 +1067,8 @@ pub fn config_parser_web_service(cfg: &mut web::ServiceConfig) {
     .service(update_dff)
     .service(recover_dff)
     .service(start_dff)
-    .service(get_dff_mapping);
+    .service(get_dff_mapping)
+    .service(get_meter_data);
 }
 
 async fn query_dev(transports: &MyTransports) -> Result<Vec<QueryDevResponseBody>, AdapterErr> {

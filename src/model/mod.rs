@@ -988,12 +988,17 @@ fn dffnodes_to_south(dff_id: u64, north: Vec<MyDfNode>) -> Result<Vec<DfNode>, A
             MyDfNodeType::TensorEval(prog, para, names) => {
                 if let Ok(prog) = load_prog(&prog) {
                     let g = create_stmt_tree(&prog);
-                    if let Some(s) = names {
-                        let names = s.split(';').map(String::from).collect();
-                        DfNodeType::TensorEval(g, para, Some(names))
+                    let names = if let Some(s) = names {
+                        if s != "" {
+                            let names = s.split(';').map(String::from).collect();
+                            Some(names)
+                        } else {
+                            None
+                        }
                     } else {
-                        DfNodeType::TensorEval(g, para, None)
-                    }
+                        None
+                    };
+                    DfNodeType::TensorEval(g, para, names)
                 } else {
                     return Err(AdapterErr {
                         code: ErrCode::DffVariableErr,

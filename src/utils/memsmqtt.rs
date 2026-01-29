@@ -356,61 +356,60 @@ fn generate_time(ts_millis: Option<u64>) -> String {
     }
 }
 
-pub async fn do_meter_data_query() -> Result<(), AdapterErr> {
+pub async fn do_meter_data_query_job() -> Result<(), AdapterErr> {
     let sched = JobScheduler::new().await.unwrap();
     let job = Job::new_async("0 0 1 * * *", |_uuid, _l| {
         Box::pin(async move {
-            let env = Env::get_env(ADAPTER_NAME);
-            let app_name = env.get_app_name();
-            let meter_sum_no = env.get_meter_sum_no();
-            let meter_dir = env.get_meter_dir();
-            if let Ok(meter_dev_addr) = query_meter_dev().await {
-                let dev_guids = meter_dev_addr.keys().cloned().collect::<Vec<_>>();
-                let body = generate_query_meter_history(dev_guids);
-                match mqtt_acquirer::<_, ResponseHistory>(
-                    "mems_query_history_data".to_string(),
-                    format!("/sys.dbc/{app_name}/S-dataservice/F-GetFrozenData"),
-                    format!("/{app_name}/sys.dbc/S-dataservice/F-GetFrozenData"),
-                    body,
-                ).await {
-                    Ok(msg) => {
-                        // let mut meter_nos = vec![];
-                        let mut timestamps = vec![];
-                        let mut meter_data = HashMap::new();
-                        for data_body in msg.body {
-                            if let Some(addr) = meter_dev_addr.get(&data_body.dev) {
-                                for measures in data_body.body {
-                                    // meter_nos.push(addr.clone());
-                                    if !timestamps.contains(&measures.timestamp) {
-                                        timestamps.push(measures.timestamp.clone());
-                                    }
-                                    if let Some(measure) = measures.body.first() {
-                                        meter_data.insert((addr.clone(), measures.timestamp), measure.val.clone());
-                                    }
-                                }
-                            }
-                        }
-                        let csv = export_meter_csv(
-                            &meter_sum_no,
-                            timestamps,
-                            meter_data,
-                        );
-                        let mut meter_data_file = File::create(&meter_dir).unwrap();
-                        meter_data_file.write_all(csv.as_bytes()).unwrap();
-                    }
-                    Err(e) => {
-                        log::error!("do mems_query_history_data error: {}", e.msg);
-                    }
-                }
+            if let Ok(csv_data) = do_meter_data_query().await {
+                let env = Env::get_env(ADAPTER_NAME);
+                let meter_dir = env.get_meter_dir();
+                let mut meter_data_file = File::create(&meter_dir).unwrap();
+                meter_data_file.write_all(csv_data.as_bytes()).unwrap();
             }
         })
     }).unwrap();
     sched.add(job).await.unwrap();
     sched.start().await.unwrap();
     Ok(())
-
     // let id = job.guid();
     // sched.remove(&id).await.unwrap();
+}
+
+pub async fn do_meter_data_query() -> Result<String, AdapterErr> {
+    let env = Env::get_env(ADAPTER_NAME);
+    let app_name = env.get_app_name();
+    let meter_sum_no = env.get_meter_sum_no();
+    let meter_dev_addr = query_meter_dev().await?;
+    let dev_guids = meter_dev_addr.keys().cloned().collect::<Vec<_>>();
+    let body = generate_query_meter_history(dev_guids);
+    let msg = mqtt_acquirer::<_, ResponseHistory>(
+        "mems_query_history_data".to_string(),
+        format!("/sys.dbc/{app_name}/S-dataservice/F-GetFrozenData"),
+        format!("/{app_name}/sys.dbc/S-dataservice/F-GetFrozenData"),
+        body,
+    ).await?;
+    // let mut meter_nos = vec![];
+    let mut timestamps = vec![];
+    let mut meter_data = HashMap::new();
+    for data_body in msg.body {
+        if let Some(addr) = meter_dev_addr.get(&data_body.dev) {
+            for measures in data_body.body {
+                // meter_nos.push(addr.clone());
+                if !timestamps.contains(&measures.timestamp) {
+                    timestamps.push(measures.timestamp.clone());
+                }
+                if let Some(measure) = measures.body.first() {
+                    meter_data.insert((addr.clone(), measures.timestamp), measure.val.clone());
+                }
+            }
+        }
+    }
+    let csv = export_meter_csv(
+        &meter_sum_no,
+        timestamps,
+        meter_data,
+    );
+    Ok(csv)
 }
 
 pub async fn query_meter_dev() -> Result<HashMap<String, String>, AdapterErr> {

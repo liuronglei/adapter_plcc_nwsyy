@@ -54,7 +54,7 @@ impl Expr {
 
         for token in &self.rpn {
             match *token {
-                Var(ref n) => {
+                Var(ref n) | Str(ref n) => {
                     match ctx.get_var(n) { 
                         Some(v) => {
                             stack.push(v);
@@ -165,13 +165,7 @@ impl Expr {
                     let r = match op {
                         Operation::Plus => x,
                         Operation::Minus => -x,
-                        Operation::Not => {
-                            if x > 0.0 {
-                                0.0
-                            } else {
-                                1.0
-                            }
-                        },
+                        Operation::Not => if x > 0.0 { 0.0 } else { 1.0 }
                         Operation::BitNot => !(x as i64) as f64,
                         Operation::Fact => {
                             // Check to make sure x has no fractional component (can be converted to int without loss)
@@ -206,7 +200,7 @@ impl Expr {
                         stack.push(r);
                     }
                     Err(e) => return Err(Error::Function(n.to_owned(), e)),
-                },
+                }
                 _ => return Err(Error::EvalError(format!("Unrecognized token: {:?}", token))),
             }
         }
@@ -254,10 +248,17 @@ impl Expr {
         }
         self.split(size)
     }
+    // 将一个tensor分解为多个表达式
     pub fn split_vec(mut self) -> Option<Vec<Expr>> {
         let token = self.rpn.pop()?;
         let size : usize;
-        if let Tensor(n) = token {
+        if let Unary(op) = token {
+            let mut v = self.split_vec()?;
+            for expr in &mut v {
+                expr.rpn.push(Unary(op));
+            }
+            return Some(v);
+        } else if let Tensor(n) = token {
             if let Some(n) = n {
                 size = n;
             } else {
@@ -268,13 +269,12 @@ impl Expr {
         }
         self.split(size)
     }
-    fn split(self, size: usize) -> Option<Vec<Expr>> {
+    fn split(self, expected_size: usize) -> Option<Vec<Expr>> {
         let mut r = Vec::with_capacity(16);
         // 对模型进行检查
         for t in self.rpn {
             match t {
-                Var(_) => r.push(Expr::from_vec(vec![t])),
-                Number(_) => r.push(Expr::from_vec(vec![t])),
+                Var(_) | Str(_) | Number(_) => r.push(Expr::from_vec(vec![t])),
                 Binary(_) => {
                     let expr1 = r.pop().unwrap().rpn;
                     let mut expr2 = r.pop().unwrap().rpn;
@@ -287,7 +287,7 @@ impl Expr {
                 }
                 Tensor(size) => {
                     match size {
-                        None => {},
+                        None => {}
                         Some(i) => {
                             if i == 0 {
                                 r.push(Expr::from_vec(vec![t]));
@@ -318,11 +318,11 @@ impl Expr {
                 }
                 Func(_, None) => {
                     r.last_mut().unwrap().rpn.push(t);
-                },
+                }
                 _ => return None,
             }
         }
-        if r.len() == size {
+        if r.len() == expected_size {
             Some(r)
         } else {
             None
@@ -335,8 +335,7 @@ impl Expr {
         // 对模型进行检查
         for token in &self.rpn {
             match *token {
-                Var(_) => stack.push(0u8),
-                Number(_) => stack.push(0u8),
+                Var(_) | Str(_) | Number(_) => stack.push(0u8),
                 Binary(_) => {
                     if stack.len() < 2 {
                         return false;
@@ -350,15 +349,16 @@ impl Expr {
                 }
                 Tensor(size) => {
                     match size {
-                        None => {},
+                        None => {}
                         Some(i) => {
                             if stack.len() < i {
                                 return false;
                             }
-                            let nl = stack.len() - i + 1;
+                            let nl = stack.len() - i;
                             stack.truncate(nl);
                         }
                     }
+                    stack.push(0u8);
                 }
                 Func(_, Some(i)) => {
                     if stack.len() < i {
@@ -701,8 +701,8 @@ impl FromStr for Expr {
             Ok(tokens) => match to_rpn(&tokens) {
                 Ok(rpn) => Ok(Expr { rpn }),
                 Err(e) => Err(Error::RPNError(e)),
-            },
-            Err(e) => Err(Error::ParseError(e)),
+            }
+            Err(e) => Err(Error::ParseError(e))
         }
     }
 }
@@ -788,6 +788,10 @@ impl<'a> Context<'a> {
             ctx.var("pi", consts::PI);
             ctx.var("PI", consts::PI);
             ctx.var("e", consts::E);
+            ctx.var("eps", f64::EPSILON);
+            ctx.var("NAN", f64::NAN);
+            ctx.var("INF", f64::INFINITY);
+            ctx.var("NEG_INF", f64::NEG_INFINITY);
             #[cfg(feature = "with_rand")]
             ctx.func0("rand", random);
             ctx.func1("sqrt", f64::sqrt);
@@ -1026,5 +1030,160 @@ impl<'a> ContextProvider for Context<'a> {
         self.funcs
             .get(name)
             .map_or(Err(FuncEvalError::UnknownFunction), |f| f(args))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use Error;
+
+    use super::*;
+
+    #[test]
+    fn test_parse() {
+        let expr = "f([],[],[])".parse::<Expr>();
+        assert_eq!(true, expr.is_ok());
+    }
+
+    #[test]
+    fn test_eval() {
+        assert_eq!(eval_str("3 -3"), Ok(0.));
+        assert_eq!(eval_str("2 + 3"), Ok(5.));
+        assert_eq!(eval_str("2 + (3 + 4)"), Ok(9.));
+        assert_eq!(eval_str("-2^(4 - 3) * (3 + 4)"), Ok(-14.));
+        assert_eq!(eval_str("-2*!3 + 1"), Ok(-11.));
+        assert_eq!(eval_str("-!171"), Ok(f64::MIN));
+        assert_eq!(eval_str("!150/!148"), Ok(22350.));
+        assert_eq!(eval_str("a + 3"), Err(Error::UnknownVariable("a".into())));
+        assert_eq!(eval_str("round(sin (pi) * cos(0))"), Ok(0.));
+        assert_eq!(eval_str("round( sqrt(3^2 + 4^2)) "), Ok(5.));
+        assert_eq!(eval_str("max(1.)"), Ok(1.));
+        assert_eq!(eval_str("max(1., 2., -1)"), Ok(2.));
+        assert_eq!(eval_str("min(1., 2., -1)"), Ok(-1.));
+        assert_eq!(
+            eval_str("sin(1.) + cos(2.)"),
+            Ok(1f64.sin() + 2f64.cos())
+        );
+        assert_eq!(eval_str("10 % 9"), Ok(10f64 % 9f64));
+
+        match eval_str("!0.5") {
+            Err(Error::EvalError(_)) => {}
+            _ => panic!("Cannot evaluate factorial of non-integer"),
+        }
+    }
+
+    #[test]
+    fn test_builtins() {
+        assert_eq!(eval_str("atan2(1.,2.)"), Ok(1f64.atan2(2.)));
+    }
+
+    #[test]
+    fn test_eval_func_ctx() {
+        use std::collections::{BTreeMap, HashMap};
+        let y = 5.;
+        assert_eq!(
+            eval_str_with_context("phi(2.)", Context::new().func1("phi", |x| x + y + 3.)),
+            Ok(2. + y + 3.)
+        );
+        assert_eq!(
+            eval_str_with_context(
+                "phi(2., 3.)",
+                Context::new().func2("phi", |x, y| x + y + 3.),
+            ),
+            Ok(2. + 3. + 3.)
+        );
+        assert_eq!(
+            eval_str_with_context(
+                "phi(2., 3., 4.)",
+                Context::new().func3("phi", |x, y, z| x + y * z),
+            ),
+            Ok(2. + 3. * 4.)
+        );
+        assert_eq!(
+            eval_str_with_context(
+                "phi(2., 3.)",
+                Context::new().funcn("phi", |xs: &[f64]| xs[0] + xs[1], 2),
+            ),
+            Ok(2. + 3.)
+        );
+        let mut m = HashMap::new();
+        m.insert("x", 2.);
+        m.insert("y", 3.);
+        assert_eq!(eval_str_with_context("x + y", &m), Ok(2. + 3.));
+        assert_eq!(
+            eval_str_with_context("x + z", m),
+            Err(Error::UnknownVariable("z".into()))
+        );
+        let mut m = BTreeMap::new();
+        m.insert("x", 2.);
+        m.insert("y", 3.);
+        assert_eq!(eval_str_with_context("x + y", &m), Ok(2. + 3.));
+        assert_eq!(
+            eval_str_with_context("x + z", m),
+            Err(Error::UnknownVariable("z".into()))
+        );
+    }
+
+    #[test]
+    fn test_bind() {
+        let expr = Expr::from_str("my_fun(\"a b c...\")");
+        assert_eq!(true, expr.is_ok());
+        let expr = Expr::from_str("x + 3").unwrap();
+        let func = expr.clone().bind("x").unwrap();
+        assert_eq!(func(1.), 4.);
+
+        assert_eq!(
+            expr.clone().bind("y").err(),
+            Some(Error::UnknownVariable("x".into()))
+        );
+
+        let ctx = (("x", 2.), builtin());
+        let func = expr.bind_with_context(&ctx, "y").unwrap();
+        assert_eq!(func(1.), 5.);
+
+        let expr = Expr::from_str("x + y + 2.").unwrap();
+        let func = expr.clone().bind2("x", "y").unwrap();
+        assert_eq!(func(1., 2.), 5.);
+        assert_eq!(
+            expr.clone().bind2("z", "y").err(),
+            Some(Error::UnknownVariable("x".into()))
+        );
+        assert_eq!(
+            expr.bind2("x", "z").err(),
+            Some(Error::UnknownVariable("y".into()))
+        );
+
+        let expr = Expr::from_str("x + y^2 + z^3").unwrap();
+        let func = expr.bind3("x", "y", "z").unwrap();
+        assert_eq!(func(1., 2., 3.), 32.);
+
+        let expr = Expr::from_str("sin(x)").unwrap();
+        let func = expr.bind("x").unwrap();
+        assert_eq!(func(1.), 1f64.sin());
+
+        let expr = Expr::from_str("sin(x,2)").unwrap();
+        match expr.bind("x") {
+            Err(Error::Function(_, FuncEvalError::NumberArgs(1))) => {}
+            _ => panic!("bind did not error"),
+        }
+        let expr = Expr::from_str("hey(x,2)").unwrap();
+        match expr.bind("x") {
+            Err(Error::Function(_, FuncEvalError::UnknownFunction)) => {}
+            _ => panic!("bind did not error"),
+        }
+    }
+
+    #[test]
+    fn hash_context() {
+        let y = 0.;
+        {
+            let z = 0.;
+
+            let mut ctx = Context::new();
+            ctx.var("x", 1.).func1("f", |x| x + y).func1("g", |x| x + z);
+            ctx.func2("g", |x, y| x + y);
+        }
     }
 }
