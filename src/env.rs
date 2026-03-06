@@ -29,7 +29,7 @@ pub const RESULT_DIR: &str = "resultFileDir";
 pub const APP_NAME: &str = "appName";
 pub const APP_MODEL: &str = "appModel";
 pub const PLCC_BEE_ID: &str = "plccBeeId";
-pub const MEMS_BEE_ID: &str = "MemsBeeId";
+pub const MEMS_BEE_ID: &str = "memsBeeId";
 pub const PLCC_MQTT_PORT: &str = "plccMqttPort";
 pub const MEMS_MQTT_PORT: &str = "memsMqttPort";
 
