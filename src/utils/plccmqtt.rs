@@ -1,18 +1,24 @@
 use std::fs::File;
 use std::io::BufReader;
 use std::collections::{HashSet, HashMap};
+use std::str::FromStr;
+use eig_domain::topics::set_points_result;
+use eig_domain::{PbSetPointResults, SetIntValue};
+use protobuf::Message;
 use tokio::time::Duration;
 use chrono::{Local, TimeZone};
+use rumqttc::{AsyncClient, Event, Incoming};
 
-use crate::utils::mqttclient::{mqtt_acquirer, mqtt_provider, mqtt_push_only};
+use crate::utils::appapi::do_get_number_array;
+use crate::utils::mqttclient::{client_subscribe, get_mqttoptions, mqtt_acquirer, mqtt_provider, mqtt_push_only};
 use crate::{ADAPTER_NAME, AdapterErr, ErrCode, MODEL_FROZEN};
 use crate::env::Env;
 use crate::model::datacenter::*;
-use crate::model::north::{MyAoes, MyPbAoeResult, MyPoints, MyTransport, MyTransports};
-use crate::model::south::{AoeAction, AoeControl};
-use crate::utils::{register_result, get_point_attr};
-use crate::utils::localapi::{query_dev_mapping, query_aoe_mapping};
-use crate::utils::plccapi::{do_query_aoe_status, do_aoe_action};
+use crate::model::north::{AppApiResultType, MyAoes, MyPbAoeResult, MyPoints, MyTransport, MyTransports};
+use crate::model::south::{AoeAction, AoeControl, Expr, PointControl};
+use crate::utils::{app_api_param_map, get_point_attr, register_result};
+use crate::utils::localapi::{query_aoe_mapping, query_app_api_mapping, query_dev_mapping};
+use crate::utils::plccapi::{do_aoe_action, do_point_action, do_query_aoe_status, do_query_aoes};
 
 pub async fn do_query_dev(transports: &Vec<MyTransport>) -> Result<Vec<QueryDevResponseBody>, AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
@@ -495,6 +501,108 @@ async fn do_get_aoe_status(cloud_event: CloudEventRequest) -> CloudEventResponse
             msg,
         },
     }
+}
+
+pub async fn do_app_api_event() -> Result<(), AdapterErr> {
+    tokio::spawn(async {
+        if let Err(e) = app_api_event().await {
+            log::error!("do app_api_event error: {}", e.msg);
+        }
+    });
+    Ok(())
+}
+
+pub async fn app_api_event() -> Result<(), AdapterErr> {
+    // let env = Env::get_env(ADAPTER_NAME);
+    let user_name = "adapter";
+    let mqtt_server = "127.0.0.1";
+    let mqtt_server_port = 1883_u16;
+    let topic_response = set_points_result("hmi001");
+    let mqttoptions = get_mqttoptions(user_name, mqtt_server, mqtt_server_port);
+    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
+    client_subscribe(&client, &topic_response).await?;
+    tokio::spawn(async move {
+        loop {
+            match eventloop.poll().await {
+                Ok(Event::Incoming(Incoming::Publish(p))) => {
+                    if p.topic == topic_response {
+                        let mut results = PbSetPointResults::new();
+                        if let Ok(()) = results.merge_from_bytes(&p.payload) {
+                            if let Err(e) = app_api_request(results).await {
+                                log::error!("do app_api_request error: {}", e.msg);
+                            }
+                        } else {
+                            log::warn!("!!Failed to parse bytes to Vec<SetPointResult>");
+                        }
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    log::error!("do app_api_event error: {e:?}");
+                    break;
+                }
+            }
+        }
+    });
+    Ok(())
+}
+
+async fn app_api_request(results: PbSetPointResults) -> Result<(), AdapterErr> {
+    // 查询映射，如果映射为空，则从数据库填充
+    let mut app_api_mapping = app_api_param_map::get_all();
+    if app_api_mapping.is_empty() {
+        let app_api_map = query_app_api_mapping().await?;
+        app_api_param_map::save_all(app_api_map.clone());
+        app_api_mapping = app_api_param_map::get_all();
+    }
+    for result in results.results {
+        // 如果虚拟测点值为1，且是第三方APP调用虚拟测点
+        if result.command() == 1 {
+            if let Some(param) = app_api_mapping.get(&result.point_id()) {
+                match param.result_type {
+                    AppApiResultType::NumberArray => {
+                        log::info!("开始调用第三方{}", param.app_url);
+                        let mut aoe_action = vec![];
+                        let number_array = do_get_number_array(&param.app_url).await?;
+                        let mut aoes = do_query_aoes().await?;
+                        for aoe in aoes.iter_mut() {
+                            let mut updated = false;
+                            for (k, v) in aoe.variables.iter_mut() {
+                                if *k == param.aoe_variable {
+                                    if let Ok(e) = Expr::from_str(&format!("{number_array:?}")) {
+                                        *v = e;
+                                        updated = true;
+                                    }
+                                }
+                            }
+                            if updated {
+                                aoe_action.push(AoeAction::UpdateAoe(aoe.clone()));
+                            }
+                        }
+                        // 将虚拟测点值重置设置为0
+                        match do_aoe_action(AoeControl { AoeActions: aoe_action }).await {
+                            Ok(_) => {
+                                let cmd = PointControl {
+                                    discretes: vec![SetIntValue {
+                                        sender_id: 1,
+                                        point_id: param.point_id,
+                                        yk_command: 0,
+                                        timestamp: 0,
+                                    }],
+                                    analogs: vec![],
+                                };
+                                do_point_action(cmd).await?;
+                            }
+                            Err(e) => {
+                                return Err(e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn get_aoe_status_body(aoes_status: Option<Vec<CloudEventAoeStatus>>, code: ErrCode, msg: String) -> CloudEventResponseBody {

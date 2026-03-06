@@ -11,19 +11,20 @@ use crate::db::mydb;
 use crate::model::datacenter::QueryDevResponseBody;
 use crate::utils::memsmqtt::do_meter_data_query;
 use crate::{AdapterErr, ErrCode, ADAPTER_NAME};
-use crate::model::north::{MyAoe, MyAoes, MyDffModel, MyDffModels, MyMeasurement, MyPoints, MyTransport, MyTransports, PointParam};
+use crate::model::north::{AppApiParam, MyAoe, MyAoes, MyDffModel, MyDffModels, MyMeasurement, MyPoints, MyTransport, MyTransports, PointParam};
 use crate::model::{points_to_south, transports_to_south, aoes_to_south, dffs_to_south};
 use crate::utils::plccapi::{do_reset, update_aoes, update_points, update_transports};
 use crate::utils::memsapi::{update_dffs, do_reset_dff, do_query_unrun_dffs, do_start_dff};
 use crate::utils::plccmqtt::{do_query_dev, do_data_query, do_register_sync, build_dev_mapping};
 use crate::db::dbutils::*;
-use crate::utils::{param_point_map, point_param_map, register_result};
+use crate::utils::{param_point_map, point_param_map, app_api_param_map, register_result};
 use crate::env::Env;
 
 const POINT_TREE: &str = "point";
 const AOE_TREE: &str = "aoe";
 const DEV_TREE: &str = "dev";
 const DFF_TREE: &str = "dff";
+const APP_API_TREE: &str = "app_api";
 
 pub const OPERATION_RECEIVE_BUFF_NUM: usize = 100;
 
@@ -37,6 +38,7 @@ pub enum ParserOperation {
     UpdateDff(Sender<u16>),
     RecoverDff(Sender<u16>),
     GetMeterData(Sender<String>),
+    GetAppApiMapping(Sender<Vec<AppApiParam>>),
     StartDff(Sender<u16>),
     // 退出数据库服务
     Quit,
@@ -73,7 +75,7 @@ impl ParserManager {
         let mut opts = rocksdb::Options::default();
         opts.create_if_missing(true);
         opts.create_missing_column_families(true);
-        let cfs = [POINT_TREE, DEV_TREE, AOE_TREE, DFF_TREE];
+        let cfs = [POINT_TREE, DEV_TREE, AOE_TREE, DFF_TREE, APP_API_TREE];
         if let Ok(inner_db) = DB::open_cf(&opts, file_path, cfs) {
             Some(ParserManager { inner_db })
         } else {
@@ -97,12 +99,14 @@ impl ParserManager {
                 let (temp_point_dir, temp_transport_dir, temp_aoe_dir) = 
                     (format!("{temp_prefix}{point_dir}"), format!("{temp_prefix}{transport_dir}"), format!("{temp_prefix}{aoe_dir}"));
                 let mut result_code = if let Err(e) = self.join_points_json(&json_dir, &result_dir, &point_dir, &temp_point_dir).await {
+                    log::warn!("{}", e.msg);
                     e.code
                 } else {
                     ErrCode::Success
                 };
                 if result_code == ErrCode::Success {
                     result_code = if let Err(e) = self.join_transports_json(&json_dir, &result_dir, &transport_dir, &temp_transport_dir).await {
+                        log::warn!("{}", e.msg);
                         e.code
                     } else {
                         ErrCode::Success
@@ -110,6 +114,7 @@ impl ParserManager {
                 }
                 if result_code == ErrCode::Success {
                     result_code = if let Err(e) = self.join_aoes_json(&json_dir, &result_dir, &aoe_dir, &temp_aoe_dir).await {
+                        log::warn!("{}", e.msg);
                         e.code
                     } else {
                         ErrCode::Success
@@ -117,6 +122,7 @@ impl ParserManager {
                 }
                 if result_code == ErrCode::Success {
                     result_code = if let Err(e) = self.start_parser(&json_dir, &temp_point_dir, &temp_transport_dir, &temp_aoe_dir).await {
+                        log::warn!("{}", e.msg);
                         e.code
                     } else {
                         if let Err(_) = self.write_into_result(
@@ -135,6 +141,7 @@ impl ParserManager {
             }
             ParserOperation::RecoverJson(sender) => {
                 let result_code = if let Err(e) = self.start_parser(&result_dir, &point_dir, &transport_dir, &aoe_dir).await {
+                    log::warn!("{}", e.msg);
                     e.code
                 } else {
                     ErrCode::Success
@@ -162,12 +169,14 @@ impl ParserManager {
                 let temp_prefix = "temp_";
                 let temp_dff_dir = format!("{temp_prefix}{dff_dir}");
                 let mut result_code = if let Err(e) = self.join_dffs_json(&json_dir, &result_dir, &dff_dir, &temp_dff_dir).await {
+                    log::warn!("{}", e.msg);
                     e.code
                 } else {
                     ErrCode::Success
                 };
                 if result_code == ErrCode::Success {
                     result_code = if let Err(e) = self.start_dff_parser(&json_dir, &temp_dff_dir).await {
+                        log::warn!("{}", e.msg);
                         e.code
                     } else {
                         if let Err(_) = self.write_into_result_dff(
@@ -186,6 +195,7 @@ impl ParserManager {
             }
             ParserOperation::RecoverDff(sender) => {
                 let result_code = if let Err(e) = self.start_dff_parser(&result_dir, &dff_dir).await {
+                    log::warn!("{}", e.msg);
                     e.code
                 } else {
                     ErrCode::Success
@@ -196,6 +206,7 @@ impl ParserManager {
             }
             ParserOperation::StartDff(sender) => {
                 let result_code = if let Err(e) = do_start_dff().await {
+                    log::warn!("{}", e.msg);
                     e.code
                 } else {
                     ErrCode::Success
@@ -218,6 +229,11 @@ impl ParserManager {
                     warn!("!!Failed to send get history_data : {e:?}");
                 }
             }
+            ParserOperation::GetAppApiMapping(sender) => {
+                if let Err(e) = sender.send(self.query_app_api_mapping()).await {
+                    warn!("!!Failed to send get app_api_mapping : {e:?}");
+                }
+            }
             ParserOperation::Quit => {}
         }
     }
@@ -233,15 +249,11 @@ impl ParserManager {
                     let mut old_points = if let Ok(file) = File::open(&result_name_points) {
                         let reader = BufReader::new(file);
                         match serde_json::from_reader::<_, MyPoints>(reader) {
-                            Ok(points) => {
-                                points
-                            },
+                            Ok(points) => points,
                             Err(err) => {
-                                let msg = format!("测点JSON反序列化失败：{err}");
-                                log::error!("{}", msg);
                                 return Err(AdapterErr {
                                     code: ErrCode::PointJsonDeserializeErr,
-                                    msg,
+                                    msg: format!("测点JSON反序列化失败：{err}"),
                                 });
                             }
                         }
@@ -289,20 +301,16 @@ impl ParserManager {
                     Ok(())
                 },
                 Err(err) => {
-                    let msg = format!("测点JSON反序列化失败：{err}");
-                    log::error!("{}", msg);
                     Err(AdapterErr {
                         code: ErrCode::PointJsonDeserializeErr,
-                        msg,
+                        msg: format!("测点JSON反序列化失败：{err}"),
                     })
                 }
             }
         } else {
-            let msg = "测点JSON文件不存在".to_string();
-            log::error!("{}", msg);
             Err(AdapterErr {
                 code: ErrCode::PointJsonNotFound,
-                msg,
+                msg: "测点JSON文件不存在".to_string(),
             })
         }
     }
@@ -322,11 +330,9 @@ impl ParserManager {
                                 transports
                             },
                             Err(err) => {
-                                let msg = format!("通道JSON反序列化失败：{err}");
-                                log::error!("{}", msg);
                                 return Err(AdapterErr {
                                     code: ErrCode::TransportJsonDeserializeErr,
-                                    msg,
+                                    msg: format!("通道JSON反序列化失败：{err}"),
                                 });
                             }
                         }
@@ -374,20 +380,16 @@ impl ParserManager {
                     Ok(())
                 },
                 Err(err) => {
-                    let msg = format!("通道JSON反序列化失败：{err}");
-                    log::error!("{}", msg);
                     Err(AdapterErr {
                         code: ErrCode::TransportJsonDeserializeErr,
-                        msg,
+                        msg: format!("通道JSON反序列化失败：{err}"),
                     })
                 }
             }
         } else {
-            let msg = "通道JSON文件不存在".to_string();
-            log::error!("{}", msg);
             Err(AdapterErr {
                 code: ErrCode::TransportJsonNotFound,
-                msg,
+                msg: "通道JSON文件不存在".to_string(),
             })
         }
     }
@@ -407,11 +409,9 @@ impl ParserManager {
                                 aoes
                             },
                             Err(err) => {
-                                let msg = format!("策略JSON反序列化失败：{err}");
-                                log::error!("{}", msg);
                                 return Err(AdapterErr {
                                     code: ErrCode::AoeJsonDeserializeErr,
-                                    msg,
+                                    msg: format!("策略JSON反序列化失败：{err}"),
                                 });
                             }
                         }
@@ -459,20 +459,16 @@ impl ParserManager {
                     Ok(())
                 },
                 Err(err) => {
-                    let msg = format!("策略JSON反序列化失败：{err}");
-                    log::error!("{}", msg);
                     Err(AdapterErr {
                         code: ErrCode::AoeJsonDeserializeErr,
-                        msg,
+                        msg: format!("策略JSON反序列化失败：{err}"),
                     })
                 }
             }
         } else {
-            let msg = "策略JSON文件不存在".to_string();
-            log::error!("{}", msg);
             Err(AdapterErr {
                 code: ErrCode::AoeJsonNotFound,
-                msg,
+                msg: "策略JSON文件不存在".to_string(),
             })
         }
     }
@@ -492,11 +488,9 @@ impl ParserManager {
                                 dffs
                             },
                             Err(err) => {
-                                let msg = format!("报表JSON反序列化失败：{err}");
-                                log::error!("{}", msg);
                                 return Err(AdapterErr {
                                     code: ErrCode::DffJsonDeserializeErr,
-                                    msg,
+                                    msg: format!("报表JSON反序列化失败：{err}"),
                                 });
                             }
                         }
@@ -544,20 +538,16 @@ impl ParserManager {
                     Ok(())
                 },
                 Err(err) => {
-                    let msg = format!("报表JSON反序列化失败：{err}");
-                    log::error!("{}", msg);
                     Err(AdapterErr {
                         code: ErrCode::DffJsonDeserializeErr,
-                        msg,
+                        msg: format!("报表JSON反序列化失败：{err}"),
                     })
                 }
             }
         } else {
-            let msg = "报表JSON文件不存在".to_string();
-            log::error!("{}", msg);
             Err(AdapterErr {
                 code: ErrCode::DffJsonNotFound,
-                msg,
+                msg: "报表JSON文件不存在".to_string(),
             })
         }
     }
@@ -608,10 +598,11 @@ impl ParserManager {
         }
 
         log::info!("start parse point.json");
-        let (points_mapping, point_param, point_discrete) = self.parse_points(file_name_points, &old_point_mapping).await?;
+        let (points_mapping, point_param, point_discrete, app_api_params) = self.parse_points(file_name_points, &old_point_mapping).await?;
         // 保存到全局变量中
         param_point_map::save_all(points_mapping.clone());
         point_param_map::save_reversal(points_mapping.clone());
+        app_api_param_map::save_all(app_api_params);
         log::info!("end parse point.json");
 
         log::info!("start parse transports.json");
@@ -634,17 +625,19 @@ impl ParserManager {
         Ok(())
     }
 
-    async fn parse_points(&self, path: String, old_point_mapping: &HashMap<String, u64>) -> Result<(HashMap<String, u64>, HashMap<String, PointParam>, HashMap<String, bool>), AdapterErr> {
+    async fn parse_points(&self, path: String, old_point_mapping: &HashMap<String, u64>) -> Result<(HashMap<String, u64>, HashMap<String, PointParam>, HashMap<String, bool>, Vec<AppApiParam>), AdapterErr> {
         // 打开文件
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
             // 反序列化为对象
             match serde_json::from_reader(reader) {
                 Ok(points) => {
-                    let (new_points, points_mapping, point_param, point_discrete) = points_to_south(points, old_point_mapping)?;
+                    let (new_points, points_mapping, point_param, point_discrete, app_api_params) = points_to_south(points, old_point_mapping)?;
                     let _ = update_points(new_points).await?;
                     self.replace_point_mapping(old_point_mapping, &points_mapping);
-                    Ok((points_mapping, point_param, point_discrete))
+                    let _ = self.delete_all_app_api_mapping();
+                    self.save_app_api_mapping(&app_api_params);
+                    Ok((points_mapping, point_param, point_discrete, app_api_params))
                 },
                 Err(err) => Err(AdapterErr {
                     code: ErrCode::PointJsonDeserializeErr,
@@ -668,13 +661,13 @@ impl ParserManager {
                 Ok(transports) => {
                     log::info!("start do dev_guid mqtt");
                     let devs = query_dev(&transports).await?;
-                    let devs_json = serde_json::to_string(&devs).unwrap();
-                    log::info!("do dev_guid mqtt receive: {}", devs_json);
+                    // let devs_json = serde_json::to_string(&devs).unwrap();
+                    // log::info!("do dev_guid mqtt receive: {}", devs_json);
                     log::info!("end do dev_guid mqtt");
                     let dev_mapping = build_dev_mapping(&devs);
                     let (new_transports, current_id) = transports_to_south(transports, points_mapping, &dev_mapping, point_param, point_discrete)?;
                     let _ = update_transports(new_transports).await?;
-                    self.delete_all_dev_mapping();
+                    let _ = self.delete_all_dev_mapping();
                     self.save_dev_mapping(&devs);
                     Ok(current_id)
                 },
@@ -814,6 +807,32 @@ impl ParserManager {
             my_id.as_bytes().to_vec()
         }).collect::<Vec<Vec<u8>>>();
         delete_items_by_keys_with_tree_name(&self.inner_db, DEV_TREE, keys)
+    }
+
+    fn query_app_api_mapping(&self) -> Vec<AppApiParam> {
+        query_values_cbor_with_tree_name(&self.inner_db, APP_API_TREE)
+    }
+
+    fn save_app_api_mapping(&self, app_api_map: &Vec<AppApiParam>) {
+        if save_items_cbor_to_db_with_tree_name(&self.inner_db, APP_API_TREE, &app_api_map, |param| {
+            param.point_id.to_be_bytes().to_vec()
+        }) {
+            info!("insert app_api_mapping success");
+        } else {
+            warn!("!!Failed to insert app_api_mapping");
+        }
+    }
+
+    fn delete_all_app_api_mapping(&self) -> bool {
+        let params = self.query_app_api_mapping();
+        self.delete_app_api_mapping(&params)
+    }
+ 
+    fn delete_app_api_mapping(&self, params: &Vec<AppApiParam>) -> bool {
+        let keys = params.iter().map(|k| {
+            k.point_id.to_be_bytes().to_vec()
+        }).collect::<Vec<Vec<u8>>>();
+        delete_items_by_keys_with_tree_name(&self.inner_db, APP_API_TREE, keys)
     }
 
     async fn start_dff_parser(&self, path: &str, dff_dir: &str) -> Result<(), AdapterErr> {
@@ -1057,6 +1076,19 @@ async fn get_meter_data(
     HttpResponse::RequestTimeout().finish()
 }
 
+#[get("/api/v1/parser/app_api_mapping")]
+async fn get_app_api_mapping(
+    sender: web::Data<Sender<ParserOperation>>,
+) -> HttpResponse {
+    let (tx, rx) = bounded(1);
+    if let Ok(()) = sender.send(ParserOperation::GetAppApiMapping(tx)).await {
+        if let Ok(r) = rx.recv().await {
+            return HttpResponse::Ok().content_type("application/json").json(r);
+        }
+    }
+    HttpResponse::RequestTimeout().finish()
+}
+
 pub fn config_parser_web_service(cfg: &mut web::ServiceConfig) {
     // 开放控制接口
     cfg.service(update_json)
@@ -1068,7 +1100,8 @@ pub fn config_parser_web_service(cfg: &mut web::ServiceConfig) {
     .service(recover_dff)
     .service(start_dff)
     .service(get_dff_mapping)
-    .service(get_meter_data);
+    .service(get_meter_data)
+    .service(get_app_api_mapping);
 }
 
 async fn query_dev(transports: &MyTransports) -> Result<Vec<QueryDevResponseBody>, AdapterErr> {

@@ -131,6 +131,28 @@ pub struct MyMeasurement {
     /// 测点描述
     pub desc: String,
     pub param: Option<PointParam>,
+    /// APP调用参数，[调用结果在AOE中的变量名, API调用URL, API调用结果返回类型]
+    pub app_api_param: Option<MyAppApiParam>,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct MyAppApiParam {
+    pub aoe_variable: String,
+    pub app_url: String,
+    pub result_type: AppApiResultType,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub struct AppApiParam {
+    pub point_id: u64,
+    pub aoe_variable: String,
+    pub app_url: String,
+    pub result_type: AppApiResultType,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
+pub enum AppApiResultType {
+    NumberArray
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]

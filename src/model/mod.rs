@@ -25,7 +25,9 @@ pub mod north;
 pub mod south;
 pub mod datacenter;
 
-pub fn points_to_south(points: MyPoints, old_point_mapping: &HashMap<String, u64>) -> Result<(Vec<Measurement>, HashMap<String, u64>, HashMap<String, PointParam>, HashMap<String, bool>), AdapterErr> {
+pub fn points_to_south(points: MyPoints, old_point_mapping: &HashMap<String, u64>)
+    -> Result<(Vec<Measurement>, HashMap<String, u64>, HashMap<String, PointParam>, HashMap<String, bool>, Vec<AppApiParam>), AdapterErr>
+ {
     let points = points.points;
     if points.is_none() {
         return Err(AdapterErr {
@@ -38,6 +40,7 @@ pub fn points_to_south(points: MyPoints, old_point_mapping: &HashMap<String, u64
     let mut mapping_result = HashMap::new();
     let mut point_param = HashMap::new();
     let mut point_discrete = HashMap::new();
+    let mut app_api_params = Vec::new();
     let mut current_pid = if let Some(max_point) = old_point_mapping.values().copied().max() {
         max_point
     } else {
@@ -90,12 +93,14 @@ pub fn points_to_south(points: MyPoints, old_point_mapping: &HashMap<String, u64
             mapping_result.insert(p.point_id.clone(), point_id);
         } else if !expression.is_empty() {
             mapping_result.insert(expression, point_id);
+        } else if let Some(param) = p.app_api_param {
+            app_api_params.push(AppApiParam { point_id, aoe_variable: param.aoe_variable, app_url: param.app_url, result_type: param.result_type });
         }
         if let Some(param) = p.param {
            point_param.insert(p.point_id, param);
         }
     }
-    Ok((points_result, mapping_result, point_param, point_discrete))
+    Ok((points_result, mapping_result, point_param, point_discrete, app_api_params))
 }
 
 pub fn transports_to_south(
@@ -487,14 +492,15 @@ fn events_to_south(aoe_id: u64, north: Vec<MyEventNode>) -> Result<Vec<EventNode
     let mut events = vec![];
     for event_n in north {
         let expr_n = event_n.expr;
-        let expr: Expr = expr_n.parse().map_err(|_| AdapterErr {
+        let id = event_n.id;
+        let expr: Expr = expr_n.parse().map_err(|e| AdapterErr {
             code: ErrCode::AoeEventErr,
-            msg: format!("策略事件公式解析错误：{expr_n}"),
+            msg: format!("策略事件公式解析错误：{e:?}，id：{id}，公式：{expr_n}"),
         })?;
         if !expr.check_validity() {
             return Err(AdapterErr {
                 code: ErrCode::AoeEventErr,
-                msg: format!("策略事件公式不可用：{expr_n}"),
+                msg: format!("策略事件公式不可用，id：{id}，公式：{expr_n}"),
             });
         }
         let event_s = EventNode {

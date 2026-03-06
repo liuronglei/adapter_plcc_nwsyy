@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use reqwest::Client;
 use crate::model::datacenter::QueryDevResponseBody;
+use crate::model::north::AppApiParam;
 use crate::{AdapterErr, ErrCode, ADAPTER_NAME};
 use crate::env::Env;
 
@@ -103,6 +104,34 @@ pub async fn query_dff_mapping() -> Result<HashMap<u64, u64>, AdapterErr> {
                 Err(AdapterErr {
                     code: ErrCode::InternalErr,
                     msg: "调用DFF映射API获取DFF映射失败".to_string(),
+                })
+            }
+        },
+        Err(ee) => {
+            log::error!("link to local api error: {:?}", ee);
+            Err(AdapterErr {
+                code: ErrCode::InternalErr,
+                msg: "连接本地API失败：".to_string(),
+            })
+        }
+    }
+}
+
+pub async fn query_app_api_mapping() -> Result<Vec<AppApiParam>, AdapterErr> {
+    let env = Env::get_env(ADAPTER_NAME);
+    let http_server_port = env.get_http_server_port();
+    let url = format!("http://localhost:{http_server_port}/api/v1/parser/app_api_mapping");
+    let client = Client::new();
+    match client
+        .get(&url)
+        .send().await {
+        Ok(response) => {
+            if let Ok(app_api_map) = response.json::<Vec<AppApiParam>>().await {
+                Ok(app_api_map)
+            } else {
+                Err(AdapterErr {
+                    code: ErrCode::InternalErr,
+                    msg: "调用第三方APP调用参数API获取第三方APP调用参数失败".to_string(),
                 })
             }
         },

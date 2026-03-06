@@ -6,7 +6,7 @@ use actix_web::middleware::Compress;
 use actix_web::web::Data;
 use crate::ADAPTER_NAME;
 use crate::parser::{start_parser_service, config_parser_web_service};
-use crate::utils::plccmqtt::{do_register, do_data_query, do_keep_alive, do_cloud_event};
+use crate::utils::plccmqtt::{do_register, do_data_query, do_keep_alive, do_cloud_event, do_app_api_event};
 use crate::utils::memsmqtt::{do_meter_data_query_job, do_mems_event};
 use crate::utils::plccapi::aoe_result_upload;
 use crate::utils::memsapi::dff_result_upload;
@@ -75,6 +75,14 @@ pub async fn run_adapter() -> std::io::Result<()> {
         },
     }
     log::info!("|<- end do cloud_event mqtt");
+    log::info!("|-> start do app_api_event mqtt");
+    match do_app_api_event().await {
+        Ok(_) => {},
+        Err(err) => {
+            log::error!("do app_api_event error: {}", err.msg);
+        },
+    }
+    log::info!("|<- end do app_api_event mqtt");
     // 启用mems时
     if env.get_is_use_mems() {
         log::info!("|-> start do dff_result_upload mqtt");
@@ -92,7 +100,7 @@ pub async fn run_adapter() -> std::io::Result<()> {
                 log::error!("do do_mems_event error: {}", err.msg);
             },
         }
-        // log::info!("|<- end do do_mems_event mqtt");
+        log::info!("|<- end do do_mems_event mqtt");
         // log::info!("|-> start do meter_data_query");
         // match do_meter_data_query_job().await {
         //     Ok(_) => {},

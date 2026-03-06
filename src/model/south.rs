@@ -4,6 +4,7 @@ use std::fmt;
 use std::fmt::{Display as FmtDisplay, Formatter};
 use std::rc::Rc;
 
+use eig_domain::{SetFloatValue, SetIntValue};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use derive_more::with_trait::{Display, FromStr};
@@ -1935,3 +1936,9 @@ pub enum FlowOperation {
     StopFlows(Vec<u64>),
 }
 /*****************报表相关-结束*****************/
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PointControl {
+    pub discretes: Vec<SetIntValue>,
+    pub analogs: Vec<SetFloatValue>,
+}

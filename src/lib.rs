@@ -24,6 +24,7 @@ pub const URL_UNRUN_DFFS: &str = "api/v1/flows/unrun";
 pub const URL_DFF_CONTROL: &str = "api/v1/flows/controls";
 pub const URL_DFF_RESET: &str = "api/v1/pscpu/reset";
 pub const URL_DFF_START: &str = "api/v1/pscpu/start";
+pub const URL_POINT_CONTROL: &str = "api/v1/controls/points";
 pub const MODEL_FROZEN: &str = "DC_SDTTU_frozen";
 pub const MODEL_FROZEN_METER: &str = "DC_Meter_frozen";
 pub const MODEL_PORT_METER: &str = "PLC";

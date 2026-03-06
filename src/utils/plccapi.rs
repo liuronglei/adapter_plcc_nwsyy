@@ -10,14 +10,14 @@ use sha2::Sha256;
 use tokio::time::{interval, Duration};
 use crate::model::{aoe_event_result_to_north, aoe_action_result_to_north};
 use crate::model::datacenter::CloudEventAoeStatus;
-use crate::model::south::{AoeControl, AoeModel, Measurement, PbAoeResults, Transport};
+use crate::model::south::{AoeControl, AoeModel, Measurement, PbAoeResults, PointControl, Transport};
 use crate::model::north::{MyPbAoeResult, MyPbEventResult, MyPbActionResult};
 use crate::utils::mqttclient::{get_mqttoptions, client_publish};
 use crate::utils::plccmqtt::{generate_aoe_update, generate_aoe_set, query_register_dev};
 use crate::utils::{point_param_map, param_point_map};
 use crate::utils::localapi::{query_aoe_mapping, query_point_mapping};
 use crate::{ADAPTER_NAME, AdapterErr, ErrCode, MODEL_FROZEN, URL_AOE_CONTROL, URL_AOE_RESULTS, URL_AOES, URL_LOGIN, URL_POINTS,
-    URL_RESET, URL_RUNNING_AOES, URL_TRANSPORTS, URL_UNRUN_AOES};
+    URL_RESET, URL_RUNNING_AOES, URL_TRANSPORTS, URL_UNRUN_AOES, URL_POINT_CONTROL};
 use crate::env::Env;
 
 const PASSWORD_V_KEY: &[u8] = b"zju-plcc";
@@ -43,6 +43,11 @@ pub async fn update_transports(transports: Vec<Transport>) -> Result<(), Adapter
         delete_transports(token.clone(), tids).await?;
     }
     save_transports(token, transports).await
+}
+
+pub async fn do_query_aoes() -> Result<Vec<AoeModel>, AdapterErr> {
+    let token = login().await?;
+    query_aoes(token).await
 }
 
 pub async fn update_aoes(aoes: Vec<AoeModel>) -> Result<(), AdapterErr> {
@@ -676,6 +681,38 @@ async fn aoe_action(token: String, aoe_control: AoeControl) -> Result<(), Adapte
             Err(AdapterErr {
                 code: ErrCode::PlccConnectErr,
                 msg: "调用启停策略API失败".to_string(),
+            })
+        }
+    } else {
+        Err(AdapterErr {
+            code: ErrCode::PlccConnectErr,
+            msg: "连接PLCC失败".to_string(),
+        })
+    }
+}
+
+pub async fn do_point_action(point_control: PointControl) -> Result<(), AdapterErr> {
+    let token = login().await?;
+    point_action(token, point_control).await
+}
+
+async fn point_action(token: String, point_control: PointControl) -> Result<(), AdapterErr> {
+    let env = Env::get_env(ADAPTER_NAME);
+    let plcc_server = env.get_plcc_server();
+    let url = format!("{plcc_server}/{URL_POINT_CONTROL}");
+    let headers = get_header(token);
+    let client = Client::new();
+    if let Ok(response) = client
+        .post(&url)
+        .headers(headers)
+        .json(&point_control)
+        .send().await {
+        if response.status() == StatusCode::OK {
+            Ok(())
+        } else {
+            Err(AdapterErr {
+                code: ErrCode::PlccConnectErr,
+                msg: "调用测点指令API失败".to_string(),
             })
         }
     } else {
