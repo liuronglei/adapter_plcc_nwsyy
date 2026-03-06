@@ -1,13 +1,23 @@
-# [target.riscv64gc-unknown-linux-gnu]
-# image = "ghcr.io/cross-rs/riscv64gc-unknown-linux-gnu:main"
-# pre-build = ["dpkg --add-architecture riscv64 && apt-get update && apt-get install --assume-yes gfortran"]
+[target.riscv64gc-unknown-linux-musl.env]
+passthrough = [
+    "DYNAMIC_ARCH=1",
+    "CBC_DOWNLOAD_DIR",
+    "IPOPT_DOWNLOAD_DIR",
+    "MUMPS_DOWNLOAD_DIR",
+    "OPENBLAS_TARGET=RISCV64_GENERIC",
+]
+volumes = [
+    "CBC_DOWNLOAD_DIR",
+    "IPOPT_DOWNLOAD_DIR",
+    "MUMPS_DOWNLOAD_DIR",
+]
 
 # command = "cross"
 # args = ["+nightly", "-Ztarget-applies-to-host", "-Zhost-config", "build", "--release", "--package", "mems", "--target", "x86_64-unknown-linux-musl", "${VERBOSE}"]
 
 [target.x86_64-unknown-linux-gnu]
 image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:main"
-pre-build = ["sed -i 's@//.*archive.ubuntu.com@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list && apt-get update && apt-get install --assume-yes python3 gcc-10 g++-10 libssl-dev golang-1.21 libmysqlclient-dev && ln -sf /usr/lib/go-1.21/bin/go /usr/bin/go && mkdir -p /.cache && chmod 777 /.cache && mkdir -p /go && chmod 777 /go"]
+pre-build = ["sed -i 's@//.*archive.ubuntu.com@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list && apt-get update && apt-get install --assume-yes python3 gcc-10 g++-10 libssl-dev golang-1.21 libmysqlclient-dev && ln -sf /usr/lib/go-1.21/bin/go /usr/bin/go && mkdir -p /.cache && chmod 777 /.cache && mkdir -p /go && chmod 777 /go && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 60"]
 # pre-build = ["sed -i 's@//.*archive.ubuntu.com@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list && apt-get update && apt-get install --assume-yes gcc-10 g++-10 libssl-dev golang-1.21 libmysqlclient-dev && ln -sf /usr/lib/go-1.21/bin/go /usr/bin/go && mkdir -p /.cache && chmod 777 /.cache && mkdir -p /go && chmod 777 /go && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 100 && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 100 && update-alternatives --install /usr/bin/cc cc /usr/bin/gcc 30 && update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++ 30"]
 # dockerfile = "build-tools/docker/Dockerfile.ubuntu18"
 
@@ -22,11 +32,13 @@ passthrough = [
     "MKLROOT",
     "CBC_DOWNLOAD_DIR",
     "IPOPT_DOWNLOAD_DIR",
+    "MUMPS_DOWNLOAD_DIR",
 ]
 volumes = [
     "MKLROOT",
     "CBC_DOWNLOAD_DIR",
     "IPOPT_DOWNLOAD_DIR",
+    "MUMPS_DOWNLOAD_DIR",
 ]
 
 [target.x86_64-unknown-linux-gnu.env]
@@ -34,12 +46,14 @@ passthrough = [
     "MKLROOT",
     "CBC_DOWNLOAD_DIR",
     "IPOPT_DOWNLOAD_DIR",
+    "MUMPS_DOWNLOAD_DIR",
     "GOPROXY=https://goproxy.cn,direct"
 ]
 volumes = [
     "MKLROOT",
     "CBC_DOWNLOAD_DIR",
     "IPOPT_DOWNLOAD_DIR",
+    "MUMPS_DOWNLOAD_DIR",
 ]
 
 
@@ -52,10 +66,12 @@ passthrough = [
     "DYNAMIC_ARCH=1",
     "CBC_DOWNLOAD_DIR",
     "IPOPT_DOWNLOAD_DIR",
+    "MUMPS_DOWNLOAD_DIR",
 ]
 volumes = [
     "CBC_DOWNLOAD_DIR",
     "IPOPT_DOWNLOAD_DIR",
+    "MUMPS_DOWNLOAD_DIR",
 ]
 
 [target.armv7-unknown-linux-gnueabihf]
@@ -66,10 +82,12 @@ passthrough = [
     "DYNAMIC_ARCH=1",
     "CBC_DOWNLOAD_DIR",
     "IPOPT_DOWNLOAD_DIR",
+    "MUMPS_DOWNLOAD_DIR",
 ]
 volumes = [
     "CBC_DOWNLOAD_DIR",
     "IPOPT_DOWNLOAD_DIR",
+    "MUMPS_DOWNLOAD_DIR",
 ]
 
 [target.aarch64-unknown-linux-musl]
@@ -81,11 +99,13 @@ passthrough = [
     "DYNAMIC_ARCH=1",
     "CBC_DOWNLOAD_DIR",
     "IPOPT_DOWNLOAD_DIR",
+    "MUMPS_DOWNLOAD_DIR",
 ]
 
 volumes = [
     "CBC_DOWNLOAD_DIR",
     "IPOPT_DOWNLOAD_DIR",
+    "MUMPS_DOWNLOAD_DIR",
 ]
 
 [target.csky-unknown-linux-gnuabiv2hf]
@@ -97,6 +117,15 @@ build-std = true
 passthrough = [
     "DYNAMIC_ARCH=1",
     "OPENBLAS_TARGET=CK860FV",
+    "CBC_DOWNLOAD_DIR",
+    "IPOPT_DOWNLOAD_DIR",
+    "MUMPS_DOWNLOAD_DIR",
+]
+
+volumes = [
+    "CBC_DOWNLOAD_DIR",
+    "IPOPT_DOWNLOAD_DIR",
+    "MUMPS_DOWNLOAD_DIR",
 ]
 
 [target.x86_64-pc-windows-gnu]
