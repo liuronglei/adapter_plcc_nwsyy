@@ -58,3 +58,7 @@ lto = true
 codegen-units = 1
 opt-level = "z"      # 或 "s"，都用于减小体积
 panic = "abort"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.91.0"  # MSRV
