@@ -48,7 +48,7 @@ unic-ucd = "0.9"
 
 protobuf = { version = "3.7", features = ["with-bytes"] }
 
-eig-domain = { path = "../eig-rc/eig-domain", default-features = false, features = ["model"] }
+eig-domain = { path = "../../eig-rc/eig-domain", default-features = false, features = ["model"] }
 #eig-expr = { path = "../eig-rc/eig-expr", default-features = false, features = ["model"] }
 #eig-aoe = { path = "../eig-rc/eig-aoe", default-features = false, features = ["model"] }
 #mems = { path = "../eig-rc/mems", default-features = false, features = ["tools", "model"] }
