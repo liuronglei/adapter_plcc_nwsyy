@@ -513,11 +513,12 @@ pub async fn do_app_api_event() -> Result<(), AdapterErr> {
 }
 
 pub async fn app_api_event() -> Result<(), AdapterErr> {
-    // let env = Env::get_env(ADAPTER_NAME);
+    let env = Env::get_env(ADAPTER_NAME);
     let user_name = "adapter";
     let mqtt_server = "127.0.0.1";
-    let mqtt_server_port = 1883_u16;
-    let topic_response = set_points_result("hmi001");
+    let mqtt_server_port = env.get_plcc_mqtt_port();
+    let beeid = env.get_plcc_beeid();
+    let topic_response = set_points_result(&beeid);
     let mqttoptions = get_mqttoptions(user_name, mqtt_server, mqtt_server_port);
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
     client_subscribe(&client, &topic_response).await?;
