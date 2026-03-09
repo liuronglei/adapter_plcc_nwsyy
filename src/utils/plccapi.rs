@@ -79,6 +79,7 @@ pub async fn do_reset(old_aoe_mapping: &HashMap<u64, u64>, new_aoe_mapping: &Has
     loop {
         // 5秒内不允许重复reset
         if last_reset_time::time_dff() < 5000 {
+            log::warn!("5秒之内重复下发reset，等待中……");
             actix_rt::time::sleep(Duration::from_millis(1000)).await;
         } else {
             last_reset_time::update();
