@@ -20,3 +20,7 @@ isUseMems = true
 memsServer = http://localhost:8182
 memsUser = admin
 memsPwd = easy2021
+plccBeeId = hmi001
+memsBeeId = xxx
+plccMqttPort = 1883
+memsMqttPort = 58083

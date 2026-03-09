@@ -657,9 +657,11 @@ impl ParserManager {
         if let Ok(file) = File::open(path) {
             let reader = BufReader::new(file);
             // 反序列化为对象
-            match serde_json::from_reader(reader) {
+            match serde_json::from_reader::<_, MyTransports>(reader) {
                 Ok(transports) => {
-                    log::info!("start do dev_guid mqtt");
+                    if transports.transports.is_none() {
+                        return Ok(65536_u64);
+                    }
                     let devs = query_dev(&transports).await?;
                     // let devs_json = serde_json::to_string(&devs).unwrap();
                     // log::info!("do dev_guid mqtt receive: {}", devs_json);
