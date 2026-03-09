@@ -121,14 +121,15 @@ impl ParserManager {
                     };
                 }
                 if result_code == ErrCode::Success {
-                    result_code = if let Err(e) = self.start_parser(&json_dir, &temp_point_dir, &temp_transport_dir, &temp_aoe_dir).await {
+                    result_code = if let Err(e) = self.start_parser(&json_dir, &temp_point_dir, &temp_transport_dir, &temp_aoe_dir, true).await {
                         log::warn!("{}", e.msg);
                         e.code
                     } else {
-                        if let Err(_) = self.write_into_result(
+                        if let Err(e) = self.write_into_result(
                             &json_dir, &point_dir, &transport_dir, &aoe_dir,
                             &result_dir, &temp_point_dir, &temp_transport_dir, &temp_aoe_dir
                         ) {
+                            log::warn!("配置编排解析成功，但将结果写入文件时报错：{e:?}");
                             ErrCode::IoErr
                         } else {
                             ErrCode::Success
@@ -140,7 +141,7 @@ impl ParserManager {
                 }
             }
             ParserOperation::RecoverJson(sender) => {
-                let result_code = if let Err(e) = self.start_parser(&result_dir, &point_dir, &transport_dir, &aoe_dir).await {
+                let result_code = if let Err(e) = self.start_parser(&result_dir, &point_dir, &transport_dir, &aoe_dir, false).await {
                     log::warn!("{}", e.msg);
                     e.code
                 } else {
@@ -179,10 +180,11 @@ impl ParserManager {
                         log::warn!("{}", e.msg);
                         e.code
                     } else {
-                        if let Err(_) = self.write_into_result_dff(
+                        if let Err(e) = self.write_into_result_dff(
                             &json_dir, &dff_dir, 
                             &result_dir, &temp_dff_dir,
                         ) {
+                            log::warn!("报表解析成功，但将结果写入文件时报错：{e:?}");
                             ErrCode::IoErr
                         } else {
                             ErrCode::Success
@@ -584,7 +586,7 @@ impl ParserManager {
         Ok(())
     }
 
-    async fn start_parser(&self, path: &str, point_dir: &str, transport_dir: &str, aoe_dir: &str) -> Result<(), AdapterErr> {
+    async fn start_parser(&self, path: &str, point_dir: &str, transport_dir: &str, aoe_dir: &str, need_reset: bool) -> Result<(), AdapterErr> {
         let file_name_points = format!("{path}/{point_dir}");
         let file_name_transports = format!("{path}/{transport_dir}");
         let file_name_aoes = format!("{path}/{aoe_dir}");
@@ -613,14 +615,16 @@ impl ParserManager {
         let _ = self.parse_aoes(file_name_aoes, &points_mapping, current_id).await?;
         log::info!("end parse aoes.json");
 
-        log::info!("start do reset");
-        let new_aoe_mapping = self.query_aoe_mapping();
-        let _ = do_reset(&old_aoe_mapping, &new_aoe_mapping).await?;
-        log::info!("end do reset");
-
-        log::info!("start do query_data mqtt");
-        let _ = do_data_query().await?;
-        log::info!("end do query_data mqtt");
+        if need_reset {
+            log::info!("start do reset");
+            let new_aoe_mapping = self.query_aoe_mapping();
+            let _ = do_reset(&old_aoe_mapping, &new_aoe_mapping).await?;
+            log::info!("end do reset");
+    
+            log::info!("start do query_data mqtt");
+            let _ = do_data_query().await?;
+            log::info!("end do query_data mqtt");
+        }
 
         Ok(())
     }

@@ -12,6 +12,7 @@ pub mod mqttclient;
 pub mod point_param_map;
 pub mod param_point_map;
 pub mod app_api_param_map;
+pub mod last_reset_time;
 pub mod register_result;
 pub mod meter_data;
 pub mod parse;

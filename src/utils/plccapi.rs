@@ -14,7 +14,7 @@ use crate::model::south::{AoeControl, AoeModel, Measurement, PbAoeResults, Point
 use crate::model::north::{MyPbAoeResult, MyPbEventResult, MyPbActionResult};
 use crate::utils::mqttclient::{get_mqttoptions, client_publish};
 use crate::utils::plccmqtt::{generate_aoe_update, generate_aoe_set, query_register_dev};
-use crate::utils::{point_param_map, param_point_map};
+use crate::utils::{last_reset_time, param_point_map, point_param_map};
 use crate::utils::localapi::{query_aoe_mapping, query_point_mapping};
 use crate::{ADAPTER_NAME, AdapterErr, ErrCode, MODEL_FROZEN, URL_AOE_CONTROL, URL_AOE_RESULTS, URL_AOES, URL_LOGIN, URL_POINTS,
     URL_RESET, URL_RUNNING_AOES, URL_TRANSPORTS, URL_UNRUN_AOES, URL_POINT_CONTROL};
@@ -76,6 +76,15 @@ pub async fn do_reset(old_aoe_mapping: &HashMap<u64, u64>, new_aoe_mapping: &Has
                 }
             })
         }).collect::<Vec<u64>>();
+    loop {
+        // 5秒内不允许重复reset
+        if last_reset_time::time_dff() < 5000 {
+            actix_rt::time::sleep(Duration::from_millis(1000)).await;
+        } else {
+            last_reset_time::update();
+            break;
+        }
+    }
     reset(token.clone(), unrun_aoes).await
 }
 
