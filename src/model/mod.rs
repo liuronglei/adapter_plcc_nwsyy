@@ -93,7 +93,8 @@ pub fn points_to_south(points: MyPoints, old_point_mapping: &HashMap<String, u64
             mapping_result.insert(p.point_id.clone(), point_id);
         } else if !expression.is_empty() {
             mapping_result.insert(expression, point_id);
-        } else if let Some(param) = p.app_api_param {
+        }
+        if let Some(param) = p.app_api_param {
             app_api_params.push(AppApiParam { point_id, aoe_variable: param.aoe_variable, app_url: param.app_url, result_type: param.result_type });
         }
         if let Some(param) = p.param {
