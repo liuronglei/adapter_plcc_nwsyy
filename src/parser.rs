@@ -346,7 +346,13 @@ impl ParserManager {
                             delete: None,
                         }
                     };
-                    if transports.transports.is_some() {
+                    if transports.transports.is_none()
+                        && transports.add.is_none()
+                        && transports.edit.is_none()
+                        && transports.delete.is_none()
+                    {
+                        old_transports.transports = None;
+                    } else if transports.transports.is_some() {
                         old_transports.transports = transports.transports;
                     } else {
                         if let Some(add) = transports.add {
