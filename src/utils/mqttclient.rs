@@ -143,6 +143,7 @@ where
                 Ok(_) => {}
                 Err(e) => {
                     log::error!("do mqtt_provider error: {e:?}");
+                    actix_rt::time::sleep(Duration::from_millis(5000)).await;
                 }
             }
         }

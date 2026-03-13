@@ -540,6 +540,7 @@ pub async fn app_api_event() -> Result<(), AdapterErr> {
                 Ok(_) => {}
                 Err(e) => {
                     log::error!("do app_api_event error: {e:?}");
+                    actix_rt::time::sleep(Duration::from_millis(5000)).await;
                 }
             }
         }
