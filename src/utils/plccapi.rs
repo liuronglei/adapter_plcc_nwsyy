@@ -61,6 +61,16 @@ pub async fn update_aoes(aoes: Vec<AoeModel>) -> Result<(), AdapterErr> {
 }
 
 pub async fn do_reset(old_aoe_mapping: &HashMap<u64, u64>, new_aoe_mapping: &HashMap<u64, u64>) -> Result<(), AdapterErr> {
+    loop {
+        // 5秒内不允许重复reset
+        if last_reset_time::time_dff() < 8000 {
+            log::warn!("8秒之内重复下发reset，等待中……");
+            actix_rt::time::sleep(Duration::from_millis(1000)).await;
+        } else {
+            last_reset_time::update();
+            break;
+        }
+    }
     // 记录重置前的AOE状态
     let token = login().await?;
     let unrun_aoes = query_unrun_aoes(token.clone()).await?;
@@ -76,16 +86,6 @@ pub async fn do_reset(old_aoe_mapping: &HashMap<u64, u64>, new_aoe_mapping: &Has
                 }
             })
         }).collect::<Vec<u64>>();
-    loop {
-        // 5秒内不允许重复reset
-        if last_reset_time::time_dff() < 5000 {
-            log::warn!("5秒之内重复下发reset，等待中……");
-            actix_rt::time::sleep(Duration::from_millis(1000)).await;
-        } else {
-            last_reset_time::update();
-            break;
-        }
-    }
     reset(token.clone(), unrun_aoes).await
 }
 
