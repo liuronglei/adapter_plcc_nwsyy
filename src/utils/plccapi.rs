@@ -64,7 +64,7 @@ pub async fn do_reset(old_aoe_mapping: &HashMap<u64, u64>, new_aoe_mapping: &Has
     loop {
         // 5秒内不允许重复reset
         if last_reset_time::time_dff() < 8000 {
-            log::warn!("8秒之内重复下发reset，等待中……");
+            log::warn!("do reset within 8 seconds, waiting...");
             actix_rt::time::sleep(Duration::from_millis(1000)).await;
         } else {
             last_reset_time::update();
@@ -111,7 +111,7 @@ async fn delete_points(token: String, ids: Vec<u64>) -> Result<(), AdapterErr> {
     } else {
         Err(AdapterErr {
             code: ErrCode::PlccConnectErr,
-            msg: "连接PLCC失败".to_string(),
+            msg: "failed to connect PLCC".to_string(),
         })
     }
 }
@@ -137,7 +137,7 @@ async fn query_points(token: String) -> Result<Vec<Measurement>, AdapterErr> {
     } else {
         Err(AdapterErr {
             code: ErrCode::PlccConnectErr,
-            msg: "连接PLCC失败".to_string(),
+            msg: "failed to connect PLCC".to_string(),
         })
     }
 }
@@ -164,7 +164,7 @@ async fn save_points(token: String, points: Vec<Measurement>) -> Result<(), Adap
     } else {
         Err(AdapterErr {
             code: ErrCode::PlccConnectErr,
-            msg: "连接PLCC失败".to_string(),
+            msg: "failed to connect PLCC".to_string(),
         })
     }
 }
@@ -195,7 +195,7 @@ async fn delete_transports(token: String, ids: Vec<u64>) -> Result<(), AdapterEr
     } else {
         Err(AdapterErr {
             code: ErrCode::PlccConnectErr,
-            msg: "连接PLCC失败".to_string(),
+            msg: "failed to connect PLCC".to_string(),
         })
     }
 }
@@ -221,7 +221,7 @@ async fn query_transports(token: String) -> Result<Vec<Transport>, AdapterErr> {
     } else {
         Err(AdapterErr {
             code: ErrCode::PlccConnectErr,
-            msg: "连接PLCC失败".to_string(),
+            msg: "failed to connect PLCC".to_string(),
         })
     }
 }
@@ -248,7 +248,7 @@ async fn save_transports(token: String, transports: Vec<Transport>) -> Result<()
     } else {
         Err(AdapterErr {
             code: ErrCode::PlccConnectErr,
-            msg: "连接PLCC失败".to_string(),
+            msg: "failed to connect PLCC".to_string(),
         })
     }
 }
@@ -279,7 +279,7 @@ async fn delete_aoes(token: String, ids: Vec<u64>) -> Result<(), AdapterErr> {
     } else {
         Err(AdapterErr {
             code: ErrCode::PlccConnectErr,
-            msg: "连接PLCC失败".to_string(),
+            msg: "failed to connect PLCC".to_string(),
         })
     }
 }
@@ -305,7 +305,7 @@ async fn query_aoes(token: String) -> Result<Vec<AoeModel>, AdapterErr> {
     } else {
         Err(AdapterErr {
             code: ErrCode::PlccConnectErr,
-            msg: "连接PLCC失败".to_string(),
+            msg: "failed to connect PLCC".to_string(),
         })
     }
 }
@@ -332,7 +332,7 @@ async fn save_aoes(token: String, aoes: Vec<AoeModel>) -> Result<(), AdapterErr>
     } else {
         Err(AdapterErr {
             code: ErrCode::PlccConnectErr,
-            msg: "连接PLCC失败".to_string(),
+            msg: "failed to connect PLCC".to_string(),
         })
     }
 }
@@ -418,7 +418,7 @@ async fn reset(token: String, unrun_aoes: Vec<u64>) -> Result<(), AdapterErr> {
     } else {
         Err(AdapterErr {
             code: ErrCode::PlccConnectErr,
-            msg: "连接PLCC失败".to_string(),
+            msg: "failed to connect PLCC".to_string(),
         })
     }
 }
@@ -570,7 +570,7 @@ async fn query_aoe_result(token: String, ids: Vec<u64>) -> Result<PbAoeResults, 
             log::error!("link to plcc error: {:?}", ee);
             Err(AdapterErr {
                 code: ErrCode::PlccConnectErr,
-                msg: format!("连接PLCC失败：{:?}", ee),
+                msg: format!("failed to connect PLCC：{:?}", ee),
             })
         }
     }
@@ -633,7 +633,7 @@ async fn query_unrun_aoes(token: String) -> Result<Vec<u64>, AdapterErr> {
             log::error!("link to plcc error: {:?}", ee);
             Err(AdapterErr {
                 code: ErrCode::PlccConnectErr,
-                msg: format!("连接PLCC失败：{:?}", ee),
+                msg: format!("failed to connect PLCC：{:?}", ee),
             })
         }
     }
@@ -663,7 +663,7 @@ async fn query_running_aoes(token: String) -> Result<Vec<u64>, AdapterErr> {
             log::error!("link to plcc error: {:?}", ee);
             Err(AdapterErr {
                 code: ErrCode::PlccConnectErr,
-                msg: format!("连接PLCC失败：{:?}", ee),
+                msg: format!("failed to connect PLCC：{:?}", ee),
             })
         }
     }
@@ -696,7 +696,7 @@ async fn aoe_action(token: String, aoe_control: AoeControl) -> Result<(), Adapte
     } else {
         Err(AdapterErr {
             code: ErrCode::PlccConnectErr,
-            msg: "连接PLCC失败".to_string(),
+            msg: "failed to connect PLCC".to_string(),
         })
     }
 }
@@ -728,7 +728,7 @@ async fn point_action(token: String, point_control: PointControl) -> Result<(), 
     } else {
         Err(AdapterErr {
             code: ErrCode::PlccConnectErr,
-            msg: "连接PLCC失败".to_string(),
+            msg: "failed to connect PLCC".to_string(),
         })
     }
 }
