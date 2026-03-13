@@ -143,7 +143,6 @@ where
                 Ok(_) => {}
                 Err(e) => {
                     log::error!("do mqtt_provider error: {e:?}");
-                    break;
                 }
             }
         }

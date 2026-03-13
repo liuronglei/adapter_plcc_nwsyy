@@ -540,7 +540,6 @@ pub async fn app_api_event() -> Result<(), AdapterErr> {
                 Ok(_) => {}
                 Err(e) => {
                     log::error!("do app_api_event error: {e:?}");
-                    break;
                 }
             }
         }
