@@ -1,4 +1,7 @@
-use reqwest::{Client, StatusCode};
+use reqwest::{
+    Client, StatusCode,
+    header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT},
+};
 use serde::{Deserialize, Serialize};
 use crate::{AdapterErr, ErrCode};
 
@@ -10,7 +13,7 @@ pub struct NumberArrayResult {
 }
 
 pub async fn do_get_number_array(url: &str) -> Result<Vec<f64>, AdapterErr> {
-    let client = Client::new();
+    let client = create_client();
     if let Ok(response) = client
         .get(url)
         .send().await {
@@ -49,4 +52,20 @@ pub async fn do_get_number_array(url: &str) -> Result<Vec<f64>, AdapterErr> {
             msg: format!("do app_api error: {url}"),
         })
     }
+}
+
+fn create_client() -> Client {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        ACCEPT,
+        HeaderValue::from_static("*/*")
+    );
+    headers.insert(
+        USER_AGENT,
+        HeaderValue::from_static("plcc")
+    );
+    Client::builder()
+        .default_headers(headers)
+        .build()
+        .unwrap()
 }
