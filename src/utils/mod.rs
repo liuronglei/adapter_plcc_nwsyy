@@ -9,10 +9,6 @@ pub mod exprparser;
 pub mod expr;
 pub mod context;
 pub mod mqttclient;
-pub mod point_param_map;
-pub mod param_point_map;
-pub mod app_api_param_map;
-pub mod last_reset_time;
 pub mod register_result;
 pub mod meter_data;
 pub mod parse;
@@ -20,6 +16,7 @@ pub mod log_init;
 pub mod jsonmodel;
 pub mod memsmqtt;
 pub mod plccmqtt;
+pub mod global;
 
 use regex::Regex;
 

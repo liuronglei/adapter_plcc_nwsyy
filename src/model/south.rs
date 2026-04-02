@@ -1942,3 +1942,54 @@ pub struct PointControl {
     pub discretes: Vec<SetIntValue>,
     pub analogs: Vec<SetFloatValue>,
 }
+
+/**
+ * @api {CommitNote} /CommitNote CommitNote
+ * @apiPrivate
+ * @apiGroup A_Object
+ * @apiSuccess {u32} version 版本号
+ * @apiSuccess {String} note 提交时的注释
+ * @apiSuccess {String} tree_id 对应的tree_id
+ */
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CommitNote {
+    // 版本号
+    pub version: u32,
+    // 提交时的注释
+    pub note: String,
+    // 对应的tree_id
+    pub tree_id: String,
+}
+/**
+ * @api {SysPoints} /SysPoints SysPoints
+ * @apiPrivate
+ * @apiGroup A_Object
+ * @apiSuccess {u32} version 版本号
+ * @apiSuccess {String} commit_msg 版本描述
+ * @apiSuccess {Measurement[]} points 测点列表
+ * @apiSuccess {Map} paths 路径Map，HashMap<路径名:String, 测点id:u64>
+ * @apiSuccess {tuple[]} beeid_to_points beeId和测点列表对应的数组，tuple格式为(beeId:String, 测点列表:u64[])
+ */
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SysPoints {
+    pub version: u32,
+    pub commit_msg: String,
+    pub points: Vec<Measurement>,
+    pub beeid_to_points: Vec<(String, Vec<u64>)>,
+}
+
+/**
+ * @api {SysAoes} /SysAoes SysAoes
+ * @apiPrivate
+ * @apiGroup A_Object
+ * @apiSuccess {u32} version 版本号
+ * @apiSuccess {String} commit_msg 版本描述
+ * @apiSuccess {AoeModel[]} aoes AOE列表
+ * @apiSuccess {Map} paths 路径Map，HashMap<路径名:String, AOE_id:u64>
+ */
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SysAoes {
+    pub version: u32,
+    pub commit_msg: String,
+    pub aoes: Vec<AoeModel>,
+}

@@ -9,15 +9,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::mydb;
 use crate::model::datacenter::QueryDevResponseBody;
+use crate::utils::global::{APP_API_PARAM_MAP, PARAM_POINT_MAP, POINT_PARAM_MAP};
 use crate::utils::memsmqtt::do_meter_data_query;
 use crate::{AdapterErr, ErrCode, ADAPTER_NAME};
 use crate::model::north::{AppApiParam, MyAoe, MyAoes, MyDffModel, MyDffModels, MyMeasurement, MyPoints, MyTransport, MyTransports, PointParam};
 use crate::model::{points_to_south, transports_to_south, aoes_to_south, dffs_to_south};
-use crate::utils::plccapi::{do_reset, update_aoes, update_points, update_transports};
-use crate::utils::memsapi::{update_dffs, do_reset_dff, do_query_unrun_dffs, do_start_dff};
+use crate::utils::plccapi::{do_reset_plcc, update_points, update_transports};
+use crate::utils::memsapi::{do_apply_current_aoes, do_import_points, do_query_unrun_dffs, do_reset_mems, do_start_dff, update_aoes, update_dffs};
 use crate::utils::plccmqtt::{do_query_dev, do_data_query, do_register_sync, build_dev_mapping};
 use crate::db::dbutils::*;
-use crate::utils::{param_point_map, point_param_map, app_api_param_map, register_result};
+use crate::utils::register_result;
 use crate::env::Env;
 
 const POINT_TREE: &str = "point";
@@ -29,14 +30,14 @@ const APP_API_TREE: &str = "app_api";
 pub const OPERATION_RECEIVE_BUFF_NUM: usize = 100;
 
 pub enum ParserOperation {
-    UpdateJson(Sender<u16>),
-    RecoverJson(Sender<u16>),
+    UpdatePlcc(Sender<u16>),
+    RecoverPlcc(Sender<u16>),
     GetPointMapping(Sender<HashMap<String, u64>>),
     GetDevMapping(Sender<Vec<QueryDevResponseBody>>),
     GetAoeMapping(Sender<HashMap<u64, u64>>),
     GetDffMapping(Sender<HashMap<u64, u64>>),
-    UpdateDff(Sender<u16>),
-    RecoverDff(Sender<u16>),
+    UpdateMems(Sender<u16>),
+    RecoverMems(Sender<u16>),
     GetMeterData(Sender<String>),
     GetAppApiMapping(Sender<Vec<AppApiParam>>),
     StartDff(Sender<u16>),
@@ -94,10 +95,9 @@ impl ParserManager {
         let aoe_dir = env.get_aoe_dir();
         let dff_dir = env.get_dff_dir();
         match op {
-            ParserOperation::UpdateJson(sender) => {
+            ParserOperation::UpdatePlcc(sender) => {
                 let temp_prefix = "temp_";
-                let (temp_point_dir, temp_transport_dir, temp_aoe_dir) = 
-                    (format!("{temp_prefix}{point_dir}"), format!("{temp_prefix}{transport_dir}"), format!("{temp_prefix}{aoe_dir}"));
+                let (temp_point_dir, temp_transport_dir) = (format!("{temp_prefix}{point_dir}"), format!("{temp_prefix}{transport_dir}"));
                 let mut result_code = if let Err(e) = self.join_points_json(&json_dir, &result_dir, &point_dir, &temp_point_dir).await {
                     log::warn!("{}", e.msg);
                     e.code
@@ -113,21 +113,13 @@ impl ParserManager {
                     };
                 }
                 if result_code == ErrCode::Success {
-                    result_code = if let Err(e) = self.join_aoes_json(&json_dir, &result_dir, &aoe_dir, &temp_aoe_dir).await {
+                    result_code = if let Err(e) = self.start_plcc_parser(&json_dir, &temp_point_dir, &temp_transport_dir, true).await {
                         log::warn!("{}", e.msg);
                         e.code
                     } else {
-                        ErrCode::Success
-                    };
-                }
-                if result_code == ErrCode::Success {
-                    result_code = if let Err(e) = self.start_parser(&json_dir, &temp_point_dir, &temp_transport_dir, &temp_aoe_dir, true).await {
-                        log::warn!("{}", e.msg);
-                        e.code
-                    } else {
-                        if let Err(e) = self.write_into_result(
-                            &json_dir, &point_dir, &transport_dir, &aoe_dir,
-                            &result_dir, &temp_point_dir, &temp_transport_dir, &temp_aoe_dir
+                        if let Err(e) = self.write_into_result_plcc(
+                            &json_dir, &point_dir, &transport_dir,
+                            &result_dir, &temp_point_dir, &temp_transport_dir,
                         ) {
                             log::warn!("配置编排解析成功，但将结果写入文件时报错：{e:?}");
                             ErrCode::IoErr
@@ -140,8 +132,8 @@ impl ParserManager {
                     warn!("!!Failed to send update json : {e:?}");
                 }
             }
-            ParserOperation::RecoverJson(sender) => {
-                let result_code = if let Err(e) = self.start_parser(&result_dir, &point_dir, &transport_dir, &aoe_dir, false).await {
+            ParserOperation::RecoverPlcc(sender) => {
+                let result_code = if let Err(e) = self.start_plcc_parser(&result_dir, &point_dir, &transport_dir, false).await {
                     log::warn!("{}", e.msg);
                     e.code
                 } else {
@@ -166,23 +158,31 @@ impl ParserManager {
                     warn!("!!Failed to send get dev_mapping : {e:?}");
                 }
             }
-            ParserOperation::UpdateDff(sender) => {
+            ParserOperation::UpdateMems(sender) => {
                 let temp_prefix = "temp_";
-                let temp_dff_dir = format!("{temp_prefix}{dff_dir}");
-                let mut result_code = if let Err(e) = self.join_dffs_json(&json_dir, &result_dir, &dff_dir, &temp_dff_dir).await {
+                let (temp_aoe_dir, temp_dff_dir) = (format!("{temp_prefix}{aoe_dir}"), format!("{temp_prefix}{dff_dir}"));
+                let mut result_code = if let Err(e) = self.join_aoes_json(&json_dir, &result_dir, &aoe_dir, &temp_aoe_dir).await {
                     log::warn!("{}", e.msg);
                     e.code
                 } else {
                     ErrCode::Success
                 };
                 if result_code == ErrCode::Success {
-                    result_code = if let Err(e) = self.start_dff_parser(&json_dir, &temp_dff_dir).await {
+                    result_code = if let Err(e) = self.join_dffs_json(&json_dir, &result_dir, &dff_dir, &temp_dff_dir).await {
                         log::warn!("{}", e.msg);
                         e.code
                     } else {
-                        if let Err(e) = self.write_into_result_dff(
-                            &json_dir, &dff_dir, 
-                            &result_dir, &temp_dff_dir,
+                        ErrCode::Success
+                    };
+                }
+                if result_code == ErrCode::Success {
+                    result_code = if let Err(e) = self.start_mems_parser(&json_dir, &temp_aoe_dir, &temp_dff_dir).await {
+                        log::warn!("{}", e.msg);
+                        e.code
+                    } else {
+                        if let Err(e) = self.write_into_result_mems(
+                            &json_dir, &aoe_dir, &dff_dir, 
+                            &result_dir, &temp_aoe_dir, &temp_dff_dir,
                         ) {
                             log::warn!("报表解析成功，但将结果写入文件时报错：{e:?}");
                             ErrCode::IoErr
@@ -195,8 +195,8 @@ impl ParserManager {
                     warn!("!!Failed to send update dff : {e:?}");
                 }
             }
-            ParserOperation::RecoverDff(sender) => {
-                let result_code = if let Err(e) = self.start_dff_parser(&result_dir, &dff_dir).await {
+            ParserOperation::RecoverMems(sender) => {
+                let result_code = if let Err(e) = self.start_mems_parser(&result_dir, &aoe_dir, &dff_dir).await {
                     log::warn!("{}", e.msg);
                     e.code
                 } else {
@@ -560,44 +560,42 @@ impl ParserManager {
         }
     }
 
-    fn write_into_result(
+    fn write_into_result_plcc(
         &self, 
-        parser_path: &str, point_dir: &str, transport_dir: &str, aoe_dir: &str,
-        result_path: &str, temp_point_dir: &str, temp_transport_dir: &str, temp_aoe_dir: &str
+        parser_path: &str, point_dir: &str, transport_dir: &str,
+        result_path: &str, temp_point_dir: &str, temp_transport_dir: &str
     ) -> io::Result<()> {
         let result_name_points = format!("{result_path}/{point_dir}");
         let result_name_transports = format!("{result_path}/{transport_dir}");
-        let result_name_aoes = format!("{result_path}/{aoe_dir}");
         let temp_name_points = format!("{parser_path}/{temp_point_dir}");
         let temp_name_transports = format!("{parser_path}/{temp_transport_dir}");
-        let temp_name_aoes = format!("{parser_path}/{temp_aoe_dir}");
         let content = read_to_string(temp_name_points)?;
         write(result_name_points, content)?;
         let content = read_to_string(temp_name_transports)?;
         write(result_name_transports, content)?;
-        let content = read_to_string(temp_name_aoes)?;
-        write(result_name_aoes, content)?;
         Ok(())
     }
 
-    fn write_into_result_dff(
+    fn write_into_result_mems(
         &self, 
-        parser_path: &str, dff_dir: &str,
-        result_path: &str, temp_dff_dir: &str,
+        parser_path: &str, aoe_dir: &str, dff_dir: &str,
+        result_path: &str, temp_aoe_dir: &str, temp_dff_dir: &str,
     ) -> io::Result<()> {
+        let result_name_aoes = format!("{result_path}/{aoe_dir}");
         let result_name_dffs = format!("{result_path}/{dff_dir}");
+        let temp_name_aoes = format!("{parser_path}/{temp_aoe_dir}");
         let temp_name_dffs = format!("{parser_path}/{temp_dff_dir}");
+        let content = read_to_string(temp_name_aoes)?;
+        write(result_name_aoes, content)?;
         let content = read_to_string(temp_name_dffs)?;
         write(result_name_dffs, content)?;
         Ok(())
     }
 
-    async fn start_parser(&self, path: &str, point_dir: &str, transport_dir: &str, aoe_dir: &str, need_reset: bool) -> Result<(), AdapterErr> {
+    async fn start_plcc_parser(&self, path: &str, point_dir: &str, transport_dir: &str, need_reset: bool) -> Result<(), AdapterErr> {
         let file_name_points = format!("{path}/{point_dir}");
         let file_name_transports = format!("{path}/{transport_dir}");
-        let file_name_aoes = format!("{path}/{aoe_dir}");
         let old_point_mapping = self.query_point_mapping();
-        let old_aoe_mapping = self.query_aoe_mapping();
 
         if !register_result::get_result() {
             log::info!("start do register");
@@ -608,28 +606,32 @@ impl ParserManager {
         log::info!("start parse point.json");
         let (points_mapping, point_param, point_discrete, app_api_params) = self.parse_points(file_name_points, &old_point_mapping).await?;
         // 保存到全局变量中
-        param_point_map::save_all(points_mapping.clone());
-        point_param_map::save_reversal(points_mapping.clone());
-        app_api_param_map::save_all(app_api_params);
+        let point_param_map = points_mapping.iter().map(|(k, v)| (*v, k.clone())).collect::<HashMap<u64, String>>();
+        let mut app_api_param_map = HashMap::with_capacity(app_api_params.len());
+        for item in app_api_params {
+            app_api_param_map.insert(item.point_id, item);
+        }
+        PARAM_POINT_MAP.save_all(points_mapping.clone());
+        POINT_PARAM_MAP.save_all(point_param_map.clone());
+        APP_API_PARAM_MAP.save_all(app_api_param_map);
         log::info!("end parse point.json");
 
         log::info!("start parse transports.json");
-        let current_id = self.parse_transports(file_name_transports, &points_mapping, &point_param, &point_discrete).await?;
+        let _ = self.parse_transports(file_name_transports, &points_mapping, &point_param, &point_discrete).await?;
         log::info!("end parse transports.json");
 
-        log::info!("start parse aoes.json");
-        let _ = self.parse_aoes(file_name_aoes, &points_mapping, current_id).await?;
-        log::info!("end parse aoes.json");
-
         if need_reset {
-            log::info!("start do reset");
-            let new_aoe_mapping = self.query_aoe_mapping();
-            let _ = do_reset(&old_aoe_mapping, &new_aoe_mapping).await?;
-            log::info!("end do reset");
+            log::info!("start do plcc reset");
+            let _ = do_reset_plcc().await?;
+            log::info!("end do plcc reset");
     
             log::info!("start do query_data mqtt");
             let _ = do_data_query().await?;
             log::info!("end do query_data mqtt");
+    
+            log::info!("start do import_points into mems");
+            let _ = do_import_points(point_param_map.keys().cloned().collect::<Vec<u64>>()).await?;
+            log::info!("end do import_points into mems");
         }
 
         Ok(())
@@ -847,17 +849,33 @@ impl ParserManager {
         delete_items_by_keys_with_tree_name(&self.inner_db, APP_API_TREE, keys)
     }
 
-    async fn start_dff_parser(&self, path: &str, dff_dir: &str) -> Result<(), AdapterErr> {
+    async fn start_mems_parser(&self, path: &str, aoe_dir: &str, dff_dir: &str) -> Result<(), AdapterErr> {
+        let file_name_aoes = format!("{path}/{aoe_dir}");
         let file_name_dffs = format!("{path}/{dff_dir}");
-        let point_mapping = self.query_point_mapping();
+        let points_mapping = self.query_point_mapping();
         // 获取未运行的报表北向ID
         let old_dff_mapping = self.query_dff_mapping();
+        let old_aoe_mapping = self.query_aoe_mapping();
         let unrun_dffs = do_query_unrun_dffs().await?;
         let unrun_dffs_north = unrun_dffs.iter().filter_map(|v| old_dff_mapping.get(v).cloned()).collect::<Vec<u64>>();
         let current_id = 65535_u64;
-        self.parse_dffs(file_name_dffs, &point_mapping, current_id).await?;
+
+        log::info!("start parse aoes.json");
+        self.parse_aoes(file_name_aoes, &points_mapping, current_id).await?;
+        do_apply_current_aoes().await?;
+        log::info!("end parse aoes.json");
+        
+        log::info!("start parse dffs.json");
+        self.parse_dffs(file_name_dffs, &points_mapping, current_id).await?;
+        log::info!("end parse dffs.json");
+
         let new_dff_mapping = self.query_dff_mapping();
-        do_reset_dff(unrun_dffs_north, &new_dff_mapping).await
+        log::info!("start do mems reset");
+        let new_aoe_mapping = self.query_aoe_mapping();
+        do_reset_mems(unrun_dffs_north, &new_dff_mapping, &old_aoe_mapping, &new_aoe_mapping).await?;
+        log::info!("end do mems reset");
+        
+        Ok(())
     }
 
     async fn parse_dffs(&self, path: String, points_mapping: &HashMap<String, u64>, current_id: u64) -> Result<(), AdapterErr> {
@@ -952,12 +970,12 @@ pub fn start_parser_service(parser_db_dir: String) -> Sender<ParserOperation> {
     op_sender
 }
 
-#[get("/api/v1/parser/update_json")]
-async fn update_json(
+#[get("/api/v1/parser/update_plcc")]
+async fn update_plcc(
     sender: web::Data<Sender<ParserOperation>>,
 ) -> HttpResponse {
     let (tx, rx) = bounded(1);
-    if let Ok(()) = sender.send(ParserOperation::UpdateJson(tx)).await {
+    if let Ok(()) = sender.send(ParserOperation::UpdatePlcc(tx)).await {
         if let Ok(r) = rx.recv().await {
             return HttpResponse::Ok().content_type("application/json").json(r);
         }
@@ -965,12 +983,12 @@ async fn update_json(
     HttpResponse::RequestTimeout().finish()
 }
 
-#[get("/api/v1/parser/recover_json")]
-async fn recover_json(
+#[get("/api/v1/parser/recover_plcc")]
+async fn recover_plcc(
     sender: web::Data<Sender<ParserOperation>>,
 ) -> HttpResponse {
     let (tx, rx) = bounded(1);
-    if let Ok(()) = sender.send(ParserOperation::RecoverJson(tx)).await {
+    if let Ok(()) = sender.send(ParserOperation::RecoverPlcc(tx)).await {
         if let Ok(r) = rx.recv().await {
             return HttpResponse::Ok().content_type("application/json").json(r);
         }
@@ -1017,12 +1035,12 @@ async fn get_aoe_mapping(
     HttpResponse::RequestTimeout().finish()
 }
 
-#[get("/api/v1/parser/update_dff")]
-async fn update_dff(
+#[get("/api/v1/parser/update_mems")]
+async fn update_mems(
     sender: web::Data<Sender<ParserOperation>>,
 ) -> HttpResponse {
     let (tx, rx) = bounded(1);
-    if let Ok(()) = sender.send(ParserOperation::UpdateDff(tx)).await {
+    if let Ok(()) = sender.send(ParserOperation::UpdateMems(tx)).await {
         if let Ok(r) = rx.recv().await {
             return HttpResponse::Ok().content_type("application/json").json(r);
         }
@@ -1030,12 +1048,12 @@ async fn update_dff(
     HttpResponse::RequestTimeout().finish()
 }
 
-#[get("/api/v1/parser/recover_dff")]
-async fn recover_dff(
+#[get("/api/v1/parser/recover_mems")]
+async fn recover_mems(
     sender: web::Data<Sender<ParserOperation>>,
 ) -> HttpResponse {
     let (tx, rx) = bounded(1);
-    if let Ok(()) = sender.send(ParserOperation::RecoverDff(tx)).await {
+    if let Ok(()) = sender.send(ParserOperation::RecoverMems(tx)).await {
         if let Ok(r) = rx.recv().await {
             return HttpResponse::Ok().content_type("application/json").json(r);
         }
@@ -1103,13 +1121,13 @@ async fn get_app_api_mapping(
 
 pub fn config_parser_web_service(cfg: &mut web::ServiceConfig) {
     // 开放控制接口
-    cfg.service(update_json)
-    .service(recover_json)
+    cfg.service(update_plcc)
+    .service(recover_plcc)
     .service(get_point_mapping)
     .service(get_dev_mapping)
     .service(get_aoe_mapping)
-    .service(update_dff)
-    .service(recover_dff)
+    .service(update_mems)
+    .service(recover_mems)
     .service(start_dff)
     .service(get_dff_mapping)
     .service(get_meter_data)

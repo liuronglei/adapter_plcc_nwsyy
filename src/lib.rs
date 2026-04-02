@@ -13,7 +13,7 @@ pub const URL_POINTS: &str = "api/v1/points/models";
 pub const URL_TRANSPORTS: &str = "api/v1/transports/models";
 pub const URL_AOES: &str = "api/v1/aoes/models";
 pub const URL_AOE_RESULTS: &str = "api/v1/aoe_results";
-pub const URL_RESET: &str = "api/v1/controls/reset";
+pub const URL_PLCC_RESET: &str = "api/v1/controls/reset";
 pub const URL_UNRUN_AOES: &str = "api/v1/unrun_aoes";
 pub const URL_RUNNING_AOES: &str = "api/v1/running_aoes";
 pub const URL_AOE_CONTROL: &str = "api/v1/controls/aoes";
@@ -22,9 +22,14 @@ pub const URL_DFF_RESULTS: &str = "api/v1/flows/results";
 pub const URL_RUNNING_DFFS: &str = "api/v1/flows/running";
 pub const URL_UNRUN_DFFS: &str = "api/v1/flows/unrun";
 pub const URL_DFF_CONTROL: &str = "api/v1/flows/controls";
-pub const URL_DFF_RESET: &str = "api/v1/pscpu/reset";
+pub const URL_MEMS_RESET: &str = "api/v1/pscpu/reset";
 pub const URL_DFF_START: &str = "api/v1/pscpu/start";
 pub const URL_POINT_CONTROL: &str = "api/v1/controls/points";
+pub const URL_IMPORT_POINTS: &str = "api/v1/lcc/points/import_str";
+pub const URL_POINTS_VERSION: &str = "api/v1/points/version";
+pub const URL_POINTS_APPLY: &str = "api/v1/pscpu/points";
+pub const URL_AOES_APPLY: &str = "api/v1/pscpu/aoes";
+pub const URL_AOES_VERSION: &str = "api/v1/aoes/version";
 pub const MODEL_FROZEN: &str = "DC_SDTTU_frozen";
 pub const MODEL_FROZEN_METER: &str = "DC_Meter_frozen";
 pub const MODEL_PORT_METER: &str = "PLC";
@@ -70,6 +75,7 @@ pub enum ErrCode {
     DffVariableErr = 642,
     DffIdNotFound = 643,
     DffActionErr = 644,
+    MemsActionErr = 645,
     Other = 699,
 }
 

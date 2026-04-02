@@ -17,32 +17,21 @@ pub async fn do_get_number_array(url: &str) -> Result<Vec<f64>, AdapterErr> {
     if let Ok(response) = client
         .get(url)
         .send().await {
-        match response.text().await {
-            Ok(text) => {
-                log::info!("do app_api {url} return text: {text}");
-                match serde_json::from_str::<NumberArrayResult>(&text) {
-                    Ok(result) => {
-                        if result.code == StatusCode::OK {
-                            Ok(result.data.unwrap_or_default())
-                        } else {
-                            Err(AdapterErr {
-                                code: ErrCode::Other,
-                                msg: format!("do app_api {url} success, but code is {}, message is: {}", result.code, result.message.unwrap_or_default()),
-                            })
-                        }
-                    }
-                    Err(e) => {
-                        Err(AdapterErr {
-                            code: ErrCode::Other,
-                            msg: format!("do app_api {url} parse json error: {e:?}"),
-                        })
-                    }
+        match response.json::<NumberArrayResult>().await {
+            Ok(result) => {
+                if result.code == StatusCode::OK {
+                    Ok(result.data.unwrap_or_default())
+                } else {
+                    Err(AdapterErr {
+                        code: ErrCode::Other,
+                        msg: format!("do app_api {url} success, but code is {}, message is: {}", result.code, result.message.unwrap_or_default()),
+                    })
                 }
             }
             Err(e) => {
                 Err(AdapterErr {
                     code: ErrCode::Other,
-                    msg: format!("do app_api {url} get text error: {e:?}"),
+                    msg: format!("do app_api {url} parse json error: {e:?}"),
                 })
             }
         }

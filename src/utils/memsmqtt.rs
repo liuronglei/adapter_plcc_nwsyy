@@ -190,7 +190,7 @@ async fn do_get_dff_status(mems_event: MemsEventRequest) -> MemsEventResponse {
                 }
             },
             Err(e) => {
-                (None, ErrCode::PlccActionErr, e.msg)
+                (None, ErrCode::MemsActionErr, e.msg)
             }
         }
     };

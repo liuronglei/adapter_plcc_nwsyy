@@ -8,8 +8,7 @@ use crate::ADAPTER_NAME;
 use crate::parser::{start_parser_service, config_parser_web_service};
 use crate::utils::plccmqtt::{do_register, do_data_query, do_keep_alive, do_cloud_event, do_app_api_event};
 use crate::utils::memsmqtt::{do_meter_data_query_job, do_mems_event};
-use crate::utils::plccapi::aoe_result_upload;
-use crate::utils::memsapi::dff_result_upload;
+use crate::utils::memsapi::{aoe_result_upload, dff_result_upload};
 use crate::utils::log_init::write_log_config;
 use crate::env::Env;
 

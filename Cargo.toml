@@ -45,6 +45,8 @@ petgraph = { version = "0.8", features = ["serde-1"] }
 polars-core = { version = "0.52", default-features = false, features = ["serde", "diagonal_concat", "timezones", "dtype-u8", "dtype-u16", "dtype-i8", "dtype-i16"] }
 polars-io = { version = "0.52", default-features = false, features = ["parquet"] }
 unic-ucd = "0.9"
+wasm-bindgen = "0.2"
+js-sys = "0.3"
 
 protobuf = { version = "3.7", features = ["with-bytes"] }
 

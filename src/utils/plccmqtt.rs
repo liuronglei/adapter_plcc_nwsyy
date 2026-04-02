@@ -10,15 +10,17 @@ use chrono::{Local, TimeZone};
 use rumqttc::{AsyncClient, Event, Incoming};
 
 use crate::utils::appapi::do_get_number_array;
+use crate::utils::global::APP_API_PARAM_MAP;
 use crate::utils::mqttclient::{client_subscribe, get_mqttoptions, mqtt_acquirer, mqtt_provider, mqtt_push_only};
 use crate::{ADAPTER_NAME, AdapterErr, ErrCode, MODEL_FROZEN};
 use crate::env::Env;
 use crate::model::datacenter::*;
 use crate::model::north::{AppApiResultType, MyAoes, MyPbAoeResult, MyPoints, MyTransport, MyTransports};
 use crate::model::south::{AoeAction, AoeControl, Expr, PointControl};
-use crate::utils::{app_api_param_map, get_point_attr, register_result};
+use crate::utils::{get_point_attr, register_result};
 use crate::utils::localapi::{query_aoe_mapping, query_app_api_mapping, query_dev_mapping};
-use crate::utils::plccapi::{do_aoe_action, do_point_action, do_query_aoe_status, do_query_aoes};
+use crate::utils::plccapi::do_point_action;
+use crate::utils::memsapi::{do_aoe_action, do_query_aoe_status, do_query_aoes};
 
 pub async fn do_query_dev(transports: &Vec<MyTransport>) -> Result<Vec<QueryDevResponseBody>, AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
@@ -550,11 +552,15 @@ pub async fn app_api_event() -> Result<(), AdapterErr> {
 
 async fn app_api_request(results: PbSetPointResults) -> Result<(), AdapterErr> {
     // 查询映射，如果映射为空，则从数据库填充
-    let mut app_api_mapping = app_api_param_map::get_all();
+    let mut app_api_mapping = APP_API_PARAM_MAP.get_all();
     if app_api_mapping.is_empty() {
         let app_api_map = query_app_api_mapping().await?;
-        app_api_param_map::save_all(app_api_map.clone());
-        app_api_mapping = app_api_param_map::get_all();
+        let mut map = HashMap::with_capacity(app_api_map.len());
+        for item in app_api_map {
+            map.insert(item.point_id, item);
+        }
+        APP_API_PARAM_MAP.save_all(map.clone());
+        app_api_mapping = map;
     }
     for result in results.results {
         // 如果虚拟测点值为1，且是第三方APP调用虚拟测点

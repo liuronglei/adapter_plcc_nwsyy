@@ -1,23 +1,14 @@
-use std::collections::{HashMap, HashSet};
-
-use rumqttc::AsyncClient;
 use reqwest::{Client, StatusCode};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use serde_json::json;
 use base64::{Engine, engine::general_purpose::STANDARD as b64_standard};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-use tokio::time::{interval, Duration};
-use crate::model::{aoe_event_result_to_north, aoe_action_result_to_north};
-use crate::model::datacenter::CloudEventAoeStatus;
-use crate::model::south::{AoeControl, AoeModel, Measurement, PbAoeResults, PointControl, Transport};
-use crate::model::north::{MyPbAoeResult, MyPbEventResult, MyPbActionResult};
-use crate::utils::mqttclient::{get_mqttoptions, client_publish};
-use crate::utils::plccmqtt::{generate_aoe_update, generate_aoe_set, query_register_dev};
-use crate::utils::{last_reset_time, param_point_map, point_param_map};
-use crate::utils::localapi::{query_aoe_mapping, query_point_mapping};
-use crate::{ADAPTER_NAME, AdapterErr, ErrCode, MODEL_FROZEN, URL_AOE_CONTROL, URL_AOE_RESULTS, URL_AOES, URL_LOGIN, URL_POINTS,
-    URL_RESET, URL_RUNNING_AOES, URL_TRANSPORTS, URL_UNRUN_AOES, URL_POINT_CONTROL};
+use tokio::time::Duration;
+use crate::model::south::{Measurement, PointControl, Transport};
+use crate::utils::global::PLCC_LAST_RESET_TIME;
+use crate::{ADAPTER_NAME, AdapterErr, ErrCode, URL_LOGIN, URL_POINTS,
+    URL_PLCC_RESET, URL_TRANSPORTS, URL_POINT_CONTROL};
 use crate::env::Env;
 
 const PASSWORD_V_KEY: &[u8] = b"zju-plcc";
@@ -45,48 +36,19 @@ pub async fn update_transports(transports: Vec<Transport>) -> Result<(), Adapter
     save_transports(token, transports).await
 }
 
-pub async fn do_query_aoes() -> Result<Vec<AoeModel>, AdapterErr> {
-    let token = login().await?;
-    query_aoes(token).await
-}
-
-pub async fn update_aoes(aoes: Vec<AoeModel>) -> Result<(), AdapterErr> {
-    let token = login().await?;
-    let old_aoes = query_aoes(token.clone()).await?;
-    let aids = old_aoes.iter().map(|v| v.id).collect::<Vec<u64>>();
-    if !aids.is_empty() {
-        delete_aoes(token.clone(), aids).await?;
-    }
-    save_aoes(token, aoes).await
-}
-
-pub async fn do_reset(old_aoe_mapping: &HashMap<u64, u64>, new_aoe_mapping: &HashMap<u64, u64>) -> Result<(), AdapterErr> {
+pub async fn do_reset_plcc() -> Result<(), AdapterErr> {
     loop {
-        // 5秒内不允许重复reset
-        if last_reset_time::time_dff() < 8000 {
-            log::warn!("do reset within 8 seconds, waiting...");
+        // 8秒内不允许重复reset
+        if PLCC_LAST_RESET_TIME.time_diff() < 8000 {
+            log::warn!("do reset PLCC within 8 seconds, waiting...");
             actix_rt::time::sleep(Duration::from_millis(1000)).await;
         } else {
-            last_reset_time::update();
+            PLCC_LAST_RESET_TIME.update();
             break;
         }
     }
-    // 记录重置前的AOE状态
     let token = login().await?;
-    let unrun_aoes = query_unrun_aoes(token.clone()).await?;
-    let new_aoe_values = new_aoe_mapping.values().copied().collect::<HashSet<u64>>();
-    let unrun_aoes = unrun_aoes
-        .iter()
-        .filter_map(|k| {
-            old_aoe_mapping.get(k).and_then(|v| {
-                if new_aoe_values.contains(v) {
-                    Some(*k)
-                } else {
-                    None
-                }
-            })
-        }).collect::<Vec<u64>>();
-    reset(token.clone(), unrun_aoes).await
+    reset(token).await
 }
 
 async fn delete_points(token: String, ids: Vec<u64>) -> Result<(), AdapterErr> {
@@ -253,90 +215,6 @@ async fn save_transports(token: String, transports: Vec<Transport>) -> Result<()
     }
 }
 
-async fn delete_aoes(token: String, ids: Vec<u64>) -> Result<(), AdapterErr> {
-    let env = Env::get_env(ADAPTER_NAME);
-    let plcc_server = env.get_plcc_server();
-    let ids = ids.iter()
-        .map(|n| n.to_string())
-        .collect::<Vec<_>>()
-        .join(",");
-    let url = format!("{plcc_server}/{URL_AOES}/{ids}");
-    let headers = get_header(token);
-    let client = Client::new();
-    if let Ok(response) = client
-        .delete(&url)
-        .headers(headers)
-        .json(&ids)
-        .send().await {
-        if response.status() == StatusCode::OK {
-            Ok(())
-        } else {
-            Err(AdapterErr {
-                code: ErrCode::PlccConnectErr,
-                msg: "调用策略API删除策略失败".to_string(),
-            })
-        }
-    } else {
-        Err(AdapterErr {
-            code: ErrCode::PlccConnectErr,
-            msg: "failed to connect PLCC".to_string(),
-        })
-    }
-}
-
-async fn query_aoes(token: String) -> Result<Vec<AoeModel>, AdapterErr> {
-    let env = Env::get_env(ADAPTER_NAME);
-    let plcc_server = env.get_plcc_server();
-    let url = format!("{plcc_server}/{URL_AOES}");
-    let headers = get_header(token);
-    let client = Client::new();
-    if let Ok(response) = client
-        .get(&url)
-        .headers(headers)
-        .send().await {
-        if let Ok(aoes) = response.json::<Vec<AoeModel>>().await {
-            Ok(aoes)
-        } else {
-            Err(AdapterErr {
-                code: ErrCode::PlccConnectErr,
-                msg: "调用策略API获取策略失败".to_string(),
-            })
-        }
-    } else {
-        Err(AdapterErr {
-            code: ErrCode::PlccConnectErr,
-            msg: "failed to connect PLCC".to_string(),
-        })
-    }
-}
-
-async fn save_aoes(token: String, aoes: Vec<AoeModel>) -> Result<(), AdapterErr> {
-    let env = Env::get_env(ADAPTER_NAME);
-    let plcc_server = env.get_plcc_server();
-    let url = format!("{plcc_server}/{URL_AOES}");
-    let headers = get_header(token);
-    let client = Client::new();
-    if let Ok(response) = client
-        .post(&url)
-        .headers(headers)
-        .json(&aoes)
-        .send().await {
-        if response.status() == StatusCode::OK {
-            Ok(())
-        } else {
-            Err(AdapterErr {
-                code: ErrCode::PlccConnectErr,
-                msg: "调用策略API新增策略失败".to_string(),
-            })
-        }
-    } else {
-        Err(AdapterErr {
-            code: ErrCode::PlccConnectErr,
-            msg: "failed to connect PLCC".to_string(),
-        })
-    }
-}
-
 async fn login() -> Result<String, AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let plcc_user = env.get_plcc_user();
@@ -396,15 +274,14 @@ fn get_header(token: String) -> HeaderMap {
     headers
 }
 
-async fn reset(token: String, unrun_aoes: Vec<u64>) -> Result<(), AdapterErr> {
+async fn reset(token: String) -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let plcc_server = env.get_plcc_server();
-    let url = format!("{plcc_server}/{URL_RESET}");
+    let url = format!("{plcc_server}/{URL_PLCC_RESET}");
     let headers = get_header(token);
     let client = Client::new();
     if let Ok(response) = client
         .post(&url)
-        .json(&unrun_aoes)
         .headers(headers)
         .send().await {
         if response.status() == StatusCode::OK {
@@ -413,284 +290,6 @@ async fn reset(token: String, unrun_aoes: Vec<u64>) -> Result<(), AdapterErr> {
             Err(AdapterErr {
                 code: ErrCode::PlccConnectErr,
                 msg: "调用重置API失败".to_string(),
-            })
-        }
-    } else {
-        Err(AdapterErr {
-            code: ErrCode::PlccConnectErr,
-            msg: "failed to connect PLCC".to_string(),
-        })
-    }
-}
-
-pub async fn aoe_result_upload() -> Result<(), AdapterErr> {
-    tokio::spawn(async {
-        if let Err(e) = aoe_upload_loop().await {
-            log::error!("do aoe_result_upload error: {}", e.msg);
-        }
-    });
-    Ok(())
-}
-
-async fn aoe_upload_loop() -> Result<(), AdapterErr> {
-    let env = Env::get_env(ADAPTER_NAME);
-    let mqtt_server = env.get_mqtt_server();
-    let mqtt_server_port = env.get_mqtt_server_port();
-    let app_name = env.get_app_name();
-    let frozen_model = MODEL_FROZEN.to_string();
-
-    let mut ticker = interval(Duration::from_secs(5));
-    let mut count = 0;
-    let mut token = "".to_string();
-    let mut last_time: HashMap<u64, u64> = HashMap::new();
-
-    let mqttoptions = get_mqttoptions("plcc_aoe_result", &mqtt_server, mqtt_server_port);
-    let topic_request_update = format!("/sys.brd/{app_name}/S-dataservice/F-UpdateSOE");
-    let topic_request_set = format!("/sys.dbc/{app_name}/S-dataservice/F-SetSOE");
-    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 100);
-    tokio::spawn(async move {
-        loop {
-            match eventloop.poll().await {
-                Ok(_) => {}
-                Err(e) => {
-                    log::error!("do aoe_result_upload error: {:?}", e);
-                    break;
-                }
-            }
-        }
-    });
-    loop {
-        ticker.tick().await;
-        if count >= 86400 {
-            count = 0;
-        }
-        if count == 0 {
-            match login().await {
-                Ok(v) => token = v,
-                Err(_) => continue
-            }
-        }
-        count += 1;
-        if let Err(e) = do_aoe_upload(&client, &topic_request_update, &topic_request_set, &token, &mut last_time, &frozen_model).await {
-            log::error!("do aoe_result_upload error: {}", e.msg);
-        }
-    }
-}
-
-async fn do_aoe_upload(client: &AsyncClient, topic_request_update: &str, topic_request_set: &str, token: &str, last_time: &mut HashMap<u64, u64>, frozen_model: &str) -> Result<(), AdapterErr> {
-    let env = Env::get_env(ADAPTER_NAME);
-    let app_name = env.get_app_name();
-    let my_aoes = query_aoes(token.to_string()).await?;
-    let aids = my_aoes.iter().map(|v| v.id).collect::<Vec<u64>>();
-    let aoe_results = query_aoe_result(token.to_string(), aids).await?;
-    // 查询映射，如果映射为空，则从数据库填充
-    let mut points_mapping = point_param_map::get_all();
-    if points_mapping.is_empty() {
-        let param_point_map = query_point_mapping().await?;
-        param_point_map::save_all(param_point_map.clone());
-        point_param_map::save_reversal(param_point_map);
-        points_mapping = point_param_map::get_all();
-    }
-    let aoe_mapping = query_aoe_mapping().await?;
-    let my_aoe_result = aoe_results.results.iter()
-        .filter(|a| {
-            let aoe_id = a.aoe_id.unwrap();
-            let end_time = a.end_time.unwrap();
-            if let Some(v) = last_time.get_mut(&aoe_id) {
-                let old = v.clone();
-                *v = end_time;
-                old != end_time
-            } else {
-                last_time.insert(aoe_id, end_time);
-                true
-            }
-        })
-        .map(|a|{
-            let event_results = a.event_results.iter().filter_map(|event_result|{
-                aoe_event_result_to_north(event_result.clone()).ok()
-            }).collect::<Vec<MyPbEventResult>>();
-            let action_results = a.action_results.iter().filter_map(|action_result|{
-                aoe_action_result_to_north(action_result.clone(), &points_mapping).ok()
-            }).collect::<Vec<MyPbActionResult>>();
-            let aoe_id = if let Some(sid) = a.aoe_id {
-                if let Some(nid) = aoe_mapping.get(&sid) {
-                    Some(nid.to_string())
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-            MyPbAoeResult {
-                aoe_id,
-                start_time: a.start_time,
-                end_time: a.end_time,
-                event_results,
-                action_results,
-            }
-        }).collect::<Vec<MyPbAoeResult>>();
-    if !my_aoe_result.is_empty() {
-        let dev = query_register_dev().await?;
-        let body = generate_aoe_update(my_aoe_result.clone(), frozen_model.to_string(), dev.clone(), app_name.clone());
-        let payload = serde_json::to_string(&body).unwrap();
-        client_publish(client, topic_request_update, &payload).await?;
-        let body = generate_aoe_set(my_aoe_result, frozen_model.to_string(), dev, app_name);
-        let payload = serde_json::to_string(&body).unwrap();
-        client_publish(client, topic_request_set, &payload).await?;
-    }
-    Ok(())
-}
-
-async fn query_aoe_result(token: String, ids: Vec<u64>) -> Result<PbAoeResults, AdapterErr> {
-    let env = Env::get_env(ADAPTER_NAME);
-    let plcc_server = env.get_plcc_server();
-    let ids = ids.iter()
-        .map(|n| n.to_string())
-        .collect::<Vec<_>>()
-        .join(",");
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let url = format!("{plcc_server}/{URL_AOE_RESULTS}?id={ids}&date={today}&last_only=true");
-    let headers = get_header(token);
-    let client = Client::new();
-    match client
-        .get(&url)
-        .headers(headers)
-        .send().await {
-        Ok(response) => {
-            if let Ok(aoe_results) = response.json::<PbAoeResults>().await {
-                Ok(aoe_results)
-            } else {
-                Err(AdapterErr {
-                    code: ErrCode::PlccConnectErr,
-                    msg: "调用API获取策略执行结果失败".to_string(),
-                })
-            }
-        },
-        Err(ee) => {
-            log::error!("link to plcc error: {:?}", ee);
-            Err(AdapterErr {
-                code: ErrCode::PlccConnectErr,
-                msg: format!("failed to connect PLCC：{:?}", ee),
-            })
-        }
-    }
-}
-
-pub async fn do_query_aoe_status() -> Result<Vec<CloudEventAoeStatus>, AdapterErr> {
-    let token = login().await?;
-    let mut aoe_status = vec![];
-    match query_unrun_aoes(token.clone()).await {
-        Ok(unrun_aoes) => {
-            for aoe_id in unrun_aoes {
-                aoe_status.push(CloudEventAoeStatus {
-                    aoe_id,
-                    aoe_status: 0,
-                });
-            }
-        },
-        Err(e) => {
-            return Err(e);
-        }
-    }
-    match query_running_aoes(token.clone()).await {
-        Ok(running_aoes) => {
-            for aoe_id in running_aoes {
-                aoe_status.push(CloudEventAoeStatus {
-                    aoe_id,
-                    aoe_status: 1,
-                });
-            }
-        },
-        Err(e) => {
-            return Err(e);
-        }
-    }
-    aoe_status.sort_by_key(|x| x.aoe_id);
-    Ok(aoe_status)
-}
-
-async fn query_unrun_aoes(token: String) -> Result<Vec<u64>, AdapterErr> {
-    let env = Env::get_env(ADAPTER_NAME);
-    let plcc_server = env.get_plcc_server();
-    let url = format!("{plcc_server}/{URL_UNRUN_AOES}");
-    let headers = get_header(token);
-    let client = Client::new();
-    match client
-        .get(&url)
-        .headers(headers)
-        .send().await {
-        Ok(response) => {
-            if let Ok(aoe_ids) = response.json::<Vec<u64>>().await {
-                Ok(aoe_ids)
-            } else {
-                Err(AdapterErr {
-                    code: ErrCode::PlccConnectErr,
-                    msg: "调用查询未运行策略API失败".to_string(),
-                })
-            }
-        },
-        Err(ee) => {
-            log::error!("link to plcc error: {:?}", ee);
-            Err(AdapterErr {
-                code: ErrCode::PlccConnectErr,
-                msg: format!("failed to connect PLCC：{:?}", ee),
-            })
-        }
-    }
-}
-
-async fn query_running_aoes(token: String) -> Result<Vec<u64>, AdapterErr> {
-    let env = Env::get_env(ADAPTER_NAME);
-    let plcc_server = env.get_plcc_server();
-    let url = format!("{plcc_server}/{URL_RUNNING_AOES}");
-    let headers = get_header(token);
-    let client = Client::new();
-    match client
-        .get(&url)
-        .headers(headers)
-        .send().await {
-        Ok(response) => {
-            if let Ok(aoe_ids) = response.json::<Vec<u64>>().await {
-                Ok(aoe_ids)
-            } else {
-                Err(AdapterErr {
-                    code: ErrCode::PlccConnectErr,
-                    msg: "调用查询运行中策略API失败".to_string(),
-                })
-            }
-        },
-        Err(ee) => {
-            log::error!("link to plcc error: {:?}", ee);
-            Err(AdapterErr {
-                code: ErrCode::PlccConnectErr,
-                msg: format!("failed to connect PLCC：{:?}", ee),
-            })
-        }
-    }
-}
-
-pub async fn do_aoe_action(aoe_control: AoeControl) -> Result<(), AdapterErr> {
-    let token = login().await?;
-    aoe_action(token, aoe_control).await
-}
-
-async fn aoe_action(token: String, aoe_control: AoeControl) -> Result<(), AdapterErr> {
-    let env = Env::get_env(ADAPTER_NAME);
-    let plcc_server = env.get_plcc_server();
-    let url = format!("{plcc_server}/{URL_AOE_CONTROL}");
-    let headers = get_header(token);
-    let client = Client::new();
-    if let Ok(response) = client
-        .post(&url)
-        .headers(headers)
-        .json(&aoe_control)
-        .send().await {
-        if response.status() == StatusCode::OK {
-            Ok(())
-        } else {
-            Err(AdapterErr {
-                code: ErrCode::PlccConnectErr,
-                msg: "调用启停策略API失败".to_string(),
             })
         }
     } else {
