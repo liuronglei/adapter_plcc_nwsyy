@@ -47,22 +47,18 @@ pub async fn update_dffs(dffs: Vec<DffModel>) -> Result<(), AdapterErr> {
     save_dffs(token, dffs).await
 }
 
-pub async fn do_start_dff() -> Result<(), AdapterErr> {
+pub async fn do_start_all() -> Result<(), AdapterErr> {
     let token = login().await?;
+    let aoes = query_aoes(token.clone()).await?;
+    let running_aoes = aoes.iter().map(|k| k.id).collect::<Vec<u64>>();
     let dffs = query_dffs(token.clone()).await?;
     let running_dffs = dffs.iter().map(|k| k.id).collect::<Vec<u64>>();
-    match start_all(token).await {
-        Ok(_) => {
-            actix_rt::time::sleep(std::time::Duration::from_millis(2000)).await;
-            do_dff_action(FlowOperation::StartFlows(running_dffs)).await
-        },
-        Err(e) => Err(e),
-    }
+    start_all(token, running_aoes, running_dffs).await
 }
 
 pub async fn do_reset_mems(
-    unrun_dffs_north: Vec<u64>,
-    dff_mapping: &HashMap<u64, u64>,
+    old_dff_mapping: &HashMap<u64, u64>,
+    new_dff_mapping: &HashMap<u64, u64>,
     old_aoe_mapping: &HashMap<u64, u64>,
     new_aoe_mapping: &HashMap<u64, u64>
 ) -> Result<(), AdapterErr> {
@@ -78,7 +74,9 @@ pub async fn do_reset_mems(
     }
     let token = login().await?;
     // 记录重置前的dff状态
-    let running_dffs = dff_mapping
+    let unrun_dffs = query_unrun_dffs(token.clone()).await?;
+    let unrun_dffs_north = unrun_dffs.iter().filter_map(|v| old_dff_mapping.get(v).cloned()).collect::<Vec<u64>>();
+    let running_dffs = new_dff_mapping
         .iter()
         .filter_map(|(k, v)| {
             if unrun_dffs_north.contains(v) {
@@ -89,25 +87,17 @@ pub async fn do_reset_mems(
         }).collect::<Vec<u64>>();
     // 记录重置前的aoe状态
     let unrun_aoes = query_unrun_aoes(token.clone()).await?;
-    let new_aoe_values = new_aoe_mapping.values().copied().collect::<HashSet<u64>>();
-    let unrun_aoes = unrun_aoes
+    let unrun_aoes_north = unrun_aoes.iter().filter_map(|v| old_aoe_mapping.get(v).cloned()).collect::<Vec<u64>>();
+    let running_aoes = new_aoe_mapping
         .iter()
-        .filter_map(|k| {
-            old_aoe_mapping.get(k).and_then(|v| {
-                if new_aoe_values.contains(v) {
-                    Some(*k)
-                } else {
-                    None
-                }
-            })
+        .filter_map(|(k, v)| {
+            if unrun_aoes_north.contains(v) {
+                None
+            } else {
+                Some(*k)
+            }
         }).collect::<Vec<u64>>();
-    match reset(token.clone()).await {
-        Ok(_) => {
-            actix_rt::time::sleep(std::time::Duration::from_millis(2000)).await;
-            do_dff_action(FlowOperation::StartFlows(running_dffs)).await
-        },
-        Err(e) => Err(e),
-    }
+    reset(token, running_aoes, running_dffs).await
 }
 
 async fn delete_dffs(token: String, ids: Vec<u64>) -> Result<(), AdapterErr> {
@@ -264,7 +254,7 @@ fn get_header(token: String) -> HeaderMap {
     headers
 }
 
-async fn reset(token: String) -> Result<(), AdapterErr> {
+async fn reset(token: String, running_aoes: Vec<u64>, running_dffs: Vec<u64>) -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let mems_server = env.get_mems_server();
     let url = format!("{mems_server}/{URL_MEMS_RESET}");
@@ -275,7 +265,7 @@ async fn reset(token: String) -> Result<(), AdapterErr> {
         .headers(headers)
         .send().await {
         if response.status() == StatusCode::OK {
-            start_all(token).await
+            start_all(token, running_aoes, running_dffs).await
         } else {
             Err(AdapterErr {
                 code: ErrCode::MemsConnectErr,
@@ -290,7 +280,7 @@ async fn reset(token: String) -> Result<(), AdapterErr> {
     }
 }
 
-async fn start_all(token: String) -> Result<(), AdapterErr> {
+async fn start_all(token: String, running_aoes: Vec<u64>, running_dffs: Vec<u64>) -> Result<(), AdapterErr> {
     let env = Env::get_env(ADAPTER_NAME);
     let mems_server = env.get_mems_server();
     let url = format!("{mems_server}/{URL_DFF_START}");
@@ -299,13 +289,14 @@ async fn start_all(token: String) -> Result<(), AdapterErr> {
     if let Ok(response) = client
         .post(&url)
         .headers(headers)
+        .json(&(running_aoes, running_dffs))
         .send().await {
         if response.status() == StatusCode::OK {
             Ok(())
         } else {
             Err(AdapterErr {
                 code: ErrCode::MemsConnectErr,
-                msg: "调用启用报表API失败".to_string(),
+                msg: "调用启用策略和报表API失败".to_string(),
             })
         }
     } else {

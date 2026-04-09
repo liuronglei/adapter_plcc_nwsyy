@@ -853,11 +853,9 @@ impl ParserManager {
         let file_name_aoes = format!("{path}/{aoe_dir}");
         let file_name_dffs = format!("{path}/{dff_dir}");
         let points_mapping = self.query_point_mapping();
-        // 获取未运行的报表北向ID
+        // 记录更新前的南北向ID映射
         let old_dff_mapping = self.query_dff_mapping();
         let old_aoe_mapping = self.query_aoe_mapping();
-        let unrun_dffs = do_query_unrun_dffs().await?;
-        let unrun_dffs_north = unrun_dffs.iter().filter_map(|v| old_dff_mapping.get(v).cloned()).collect::<Vec<u64>>();
         let current_id = 65535_u64;
 
         log::info!("start parse aoes.json");
@@ -869,10 +867,10 @@ impl ParserManager {
         self.parse_dffs(file_name_dffs, &points_mapping, current_id).await?;
         log::info!("end parse dffs.json");
 
-        let new_dff_mapping = self.query_dff_mapping();
         log::info!("start do mems reset");
+        let new_dff_mapping = self.query_dff_mapping();
         let new_aoe_mapping = self.query_aoe_mapping();
-        do_reset_mems(unrun_dffs_north, &new_dff_mapping, &old_aoe_mapping, &new_aoe_mapping).await?;
+        do_reset_mems(&old_dff_mapping, &new_dff_mapping, &old_aoe_mapping, &new_aoe_mapping).await?;
         log::info!("end do mems reset");
         
         Ok(())
